@@ -45,7 +45,8 @@ from src.core.optimization import (
 )
 from src.core.microstructure import OrderFlowAnalyzer, OrderBookMetrics
 from src.core.news_sentinel import NewsSentinel, NEWS_SENTINEL_AVAILABLE, SentimentResult
-from src.config.settings import EVOLUTION_EPOCH
+from src.core.consensus import ConsensusEngine
+from src.config.settings import EVOLUTION_EPOCH, CONSENSUS_VOTING_ENABLED, MAX_OPEN_TRADES, MAX_POSITION_SIZE_PERCENT
 from src.database.repository import get_connection
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,19 @@ class Sentinel:
         self.news_sentinel = NewsSentinel() if NEWS_SENTINEL_AVAILABLE else None
         self.current_sentiment: Optional[SentimentResult] = None
         self._last_news_check: Optional[datetime] = None
+
+        # ============================================================
+        # CONSENSUS ENGINE (Parallel Voting - Council of 6)
+        # ============================================================
+        # All 6 agents vote independently: Regime, Strategy, Sniper, News, Seasonality, Institutional
+        # Votes are aggregated using weighted average (-1.0 to +1.0)
+        # Reinforcement learning adjusts weights based on trade outcomes
+        if CONSENSUS_VOTING_ENABLED:
+            self.consensus_engine = ConsensusEngine()
+            logger.info("Consensus voting engine initialized (Council of 6)")
+        else:
+            self.consensus_engine = None
+            logger.warning("Consensus voting disabled - using legacy veto logic")
 
         # Track last evolution epoch
         self.last_evolution_time = datetime.utcnow()
@@ -489,6 +503,79 @@ class Sentinel:
             if conn:
                 conn.close()
 
+    def _collect_agent_votes(self, symbol: str, df: pd.DataFrame, regime: str,
+                               ichimoku_signal: str, order_imbalance: float,
+                               seasonality_passed: bool) -> Dict[str, Tuple[float, str]]:
+        """
+        Collect votes from all 6 agents for parallel consensus voting.
+
+        Returns:
+            Dict[agent_name: (vote_value, reasoning)]
+        """
+        votes = {}
+
+        # Agent 1: REGIME (HMM Bull/Bear/Chop detection)
+        regime_vote = 1.0 if regime == "bull" else (-1.0 if regime == "bear" else 0.0)
+        votes['regime'] = (
+            regime_vote,
+            f"Regime: {regime.upper()}"
+        )
+
+        # Agent 2: STRATEGY (Ichimoku Cloud signals)
+        strategy_vote = 1.0 if ichimoku_signal == "BUY" else (-1.0 if ichimoku_signal == "SELL" else 0.0)
+        votes['strategy'] = (
+            strategy_vote,
+            f"Ichimoku: {ichimoku_signal}"
+        )
+
+        # Agent 3: SNIPER (Microstructure order flow)
+        if abs(order_imbalance) > 0.2:
+            sniper_vote = order_imbalance  # Range: -1.0 to +1.0
+            reason = "Strong order pressure" if abs(order_imbalance) > 0.5 else "Moderate order pressure"
+        else:
+            sniper_vote = 0.0
+            reason = "Balanced order flow"
+        votes['sniper'] = (sniper_vote, reason)
+
+        # Agent 4: NEWS (Sentiment analysis)
+        news_vote = 0.0
+        news_reason = "No sentiment data"
+        if self.current_sentiment:
+            sentiment_score = self.current_sentiment.score  # 0-100
+            # Convert to vote: -1.0 to +1.0
+            news_vote = (sentiment_score - 50) / 50.0
+            news_reason = self.current_sentiment.label
+
+        votes['news'] = (news_vote, news_reason)
+
+        # Agent 5: SEASONALITY (Time-based patterns)
+        seasonality_vote = 0.5 if seasonality_passed else -0.3
+        seasonality_reason = "Seasonally favorable" if seasonality_passed else "Seasonally unfavorable"
+        votes['seasonality'] = (seasonality_vote, seasonality_reason)
+
+        # Agent 6: INSTITUTIONAL (Portfolio constraints)
+        # Check if we can open more trades (MAX_OPEN_TRADES constraint)
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trades WHERE status = 'open'")
+            open_count = cursor.fetchone()[0]
+            conn.close()
+
+            if open_count >= MAX_OPEN_TRADES:
+                institutional_vote = -1.0
+                institutional_reason = f"Max trades reached ({MAX_OPEN_TRADES}/5)"
+            else:
+                institutional_vote = 0.8  # Portfolio is healthy
+                institutional_reason = f"Portfolio ready ({open_count}/5 trades)"
+        except:
+            institutional_vote = 0.5
+            institutional_reason = "Portfolio check failed"
+
+        votes['institutional'] = (institutional_vote, institutional_reason)
+
+        return votes
+
     def scan_market(self) -> Dict[str, int]:
         """
         Scan the market by fetching data and running strategy on active assets.
@@ -597,57 +684,94 @@ class Sentinel:
                     )
 
                     # ============================================================
-                    # STEP 5: Apply regime filter
+                    # STEP 5: PARALLEL CONSENSUS VOTING (Council of 6)
                     # ============================================================
+                    # Replace sequential veto with parallel voting if enabled
                     signal = ichimoku_signal
                     regime_filtered = False
+                    consensus_score = 0.0
+                    agent_votes_dict = {}
 
-                    if regime == "chop":
-                        signal = "NEUTRAL"
-                        regime_filtered = True
-                        signal_result["reason"] = f"Strategy:{strategy_name} | Signal:{ichimoku_signal} | Regime:{regime} (CHOP ZONE - BLOCKED)"
+                    if self.consensus_engine:
+                        # Get order imbalance for sniper agent
+                        order_imbalance = 0.0
+                        try:
+                            self.order_flow_analyzer.set_adapter(adapter)
+                            ob_metrics = self.order_flow_analyzer.get_order_book_metrics(symbol)
+                            order_imbalance = ob_metrics.order_imbalance
+                        except:
+                            order_imbalance = 0.0
 
-                    elif regime == "bull" and ichimoku_signal == "SELL":
-                        signal = "NEUTRAL"
-                        regime_filtered = True
-                        signal_result["reason"] = f"Strategy:{strategy_name} | Signal:{ichimoku_signal} | Regime:{regime} (BULL MARKET - SELL BLOCKED)"
-
-                    elif regime == "bear" and ichimoku_signal == "BUY":
-                        signal = "NEUTRAL"
-                        regime_filtered = True
-                        signal_result["reason"] = f"Strategy:{strategy_name} | Signal:{ichimoku_signal} | Regime:{regime} (BEAR MARKET - BUY BLOCKED)"
-
-                    # ============================================================
-                    # STEP 5.5: MICROSTRUCTURE SNIPER CHECK
-                    # ============================================================
-                    # Validate signal against order book pressure
-                    sniper_passed = True
-                    sniper_reason = ""
-                    order_imbalance = 0.0
-
-                    if signal != "NEUTRAL":
-                        # Set adapter for order flow analyzer
-                        self.order_flow_analyzer.set_adapter(adapter)
-
-                        # Get order book metrics
-                        ob_metrics = self.order_flow_analyzer.get_order_book_metrics(symbol)
-                        order_imbalance = ob_metrics.order_imbalance
-
-                        # Check sniper entry
-                        sniper_passed, sniper_reason = self.order_flow_analyzer.check_sniper_entry(
-                            symbol, signal, strict=True
+                        # Collect votes from all 6 agents
+                        agent_votes_dict = self._collect_agent_votes(
+                            symbol, df, regime, ichimoku_signal,
+                            order_imbalance, should_trade
                         )
 
-                        if not sniper_passed:
-                            logger.info(
-                                f"🚫 SNIPER BLOCKED: {symbol} {signal} - {sniper_reason}"
-                            )
-                            signal = "NEUTRAL"
-                            signal_result["reason"] = f"SNIPER BLOCKED: {sniper_reason}"
+                        # Extract just the vote values for consensus engine
+                        votes_dict = {k: v[0] for k, v in agent_votes_dict.items()}
+
+                        # Get consensus from engine
+                        consensus_result = self.consensus_engine.aggregate_consensus(votes_dict)
+                        consensus_score = consensus_result.consensus_score
+                        consensus_decision = consensus_result.decision
+
+                        # Log the vote breakdown
+                        vote_breakdown = " | ".join([
+                            f"{k.upper()}:{v[0]:+.2f}({v[1]})"
+                            for k, v in agent_votes_dict.items()
+                        ])
+                        logger.info(
+                            f"[COUNCIL_VOTE] {symbol}: {vote_breakdown} => "
+                            f"CONSENSUS:{consensus_score:+.2f} DECISION:{consensus_decision}"
+                        )
+
+                        # Determine final signal based on consensus
+                        if abs(consensus_score) > 0.60:  # CONSENSUS_THRESHOLD_EXECUTE
+                            signal = "BUY" if consensus_score > 0 else "SELL"
+                            signal_result["reason"] = f"Council Consensus: {consensus_score:+.2f} | {consensus_decision}"
                         else:
-                            logger.info(
-                                f"✅ SNIPER PASS: {symbol} {signal} - {sniper_reason}"
-                            )
+                            signal = "NEUTRAL"
+                            signal_result["reason"] = f"Consensus too weak: {consensus_score:+.2f} (threshold: 0.60)"
+                            regime_filtered = True  # Mark as filtered for logging
+
+                    else:
+                        # Legacy veto logic (if consensus voting is disabled)
+                        if regime == "chop":
+                            signal = "NEUTRAL"
+                            regime_filtered = True
+                            signal_result["reason"] = f"Strategy:{strategy_name} | Signal:{ichimoku_signal} | Regime:{regime} (CHOP ZONE - BLOCKED)"
+
+                        elif regime == "bull" and ichimoku_signal == "SELL":
+                            signal = "NEUTRAL"
+                            regime_filtered = True
+                            signal_result["reason"] = f"Strategy:{strategy_name} | Signal:{ichimoku_signal} | Regime:{regime} (BULL MARKET - SELL BLOCKED)"
+
+                        elif regime == "bear" and ichimoku_signal == "BUY":
+                            signal = "NEUTRAL"
+                            regime_filtered = True
+                            signal_result["reason"] = f"Strategy:{strategy_name} | Signal:{ichimoku_signal} | Regime:{regime} (BEAR MARKET - BUY BLOCKED)"
+
+                        # Legacy: Microstructure sniper check
+                        sniper_passed = True
+                        order_imbalance = 0.0
+
+                        if signal != "NEUTRAL":
+                            try:
+                                self.order_flow_analyzer.set_adapter(adapter)
+                                ob_metrics = self.order_flow_analyzer.get_order_book_metrics(symbol)
+                                order_imbalance = ob_metrics.order_imbalance
+
+                                sniper_passed, sniper_reason = self.order_flow_analyzer.check_sniper_entry(
+                                    symbol, signal, strict=True
+                                )
+
+                                if not sniper_passed:
+                                    logger.info(f"SNIPER BLOCKED: {symbol} {signal}")
+                                    signal = "NEUTRAL"
+                                    signal_result["reason"] = f"SNIPER BLOCKED: {sniper_reason}"
+                            except:
+                                pass
 
                     # ============================================================
                     # STEP 6: Update market_snapshots (includes microstructure)
@@ -680,32 +804,11 @@ class Sentinel:
                     )
 
                     # ============================================================
-                    # STEP 6.5: NEWS SENTINEL VETO (Global Sentiment Check)
+                    # STEP 6.5: UPDATE NEWS SENTIMENT (for Council voting)
                     # ============================================================
-                    # Only check news if we have a valid signal that passed all filters
-                    news_passed = True
-                    news_reason = ""
-
-                    if signal != "NEUTRAL" and self.news_sentinel:
-                        # Update news sentiment (cached, only fetches every 15 mins)
+                    # Keep news sentiment updated for consensus voting
+                    if self.news_sentinel and signal != "NEUTRAL":
                         self._update_news_sentiment()
-
-                        if self.current_sentiment:
-                            # Check if news vetoes this trade
-                            news_passed, news_reason = self.news_sentinel.check_news_veto(
-                                signal, self.current_sentiment.score
-                            )
-
-                            if not news_passed:
-                                logger.info(
-                                    f"📰 NEWS VETO: {symbol} {signal} blocked - {news_reason}"
-                                )
-                                signal = "NEUTRAL"
-                                signal_result["reason"] = f"NEWS VETO: {news_reason}"
-                            else:
-                                logger.info(
-                                    f"📰 NEWS PASS: {symbol} {signal} - {news_reason}"
-                                )
 
                     # ============================================================
                     # STEP 7: Execute trade if signal is actionable

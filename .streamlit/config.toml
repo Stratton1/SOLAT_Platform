@@ -1,8 +1,9 @@
 [theme]
-primaryColor = "#00FF00"
+base = "dark"
+primaryColor = "#00FF41"
 backgroundColor = "#0E1117"
-secondaryBackgroundColor = "#262730"
-textColor = "#FAFAFA"
+secondaryBackgroundColor = "#1a1f2e"
+textColor = "#00FF41"
 font = "monospace"
 
 [layout]

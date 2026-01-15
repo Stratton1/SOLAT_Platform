@@ -37,8 +37,10 @@ MAX_DRAWDOWN_ALLOWED: float = 0.20  # Stop trading if account drawdown > 20%
 # ============================================================================
 # These are non-negotiable safety limits for the institutional system
 
-MAX_OPEN_TRADES: int = 2  # HARD LIMIT: Maximum concurrent open positions
-# If 2 trades are open, the system MUST sleep until one closes
+MAX_OPEN_TRADES: int = 5  # HARD LIMIT: Maximum concurrent open positions
+# If 5 trades are open, the system MUST sleep until one closes
+
+MAX_POSITION_SIZE_PERCENT: float = 0.10  # HARD LIMIT: 10% max per trade
 
 SAFE_MODE_ENABLED: bool = True  # Master switch for safe mode constraints
 
@@ -133,6 +135,16 @@ AGENT_INITIAL_WEIGHTS: dict = {
     'news': 0.12,             # Sentiment is weaker signal
     'seasonality': 0.16,      # Time-based patterns
     'institutional': 0.15,    # Portfolio constraints
+}
+
+# All 6 agents are required (no agent can be disabled)
+AGENTS: dict = {
+    'regime': True,
+    'strategy': True,
+    'sniper': True,
+    'news': True,
+    'seasonality': True,
+    'institutional': True,
 }
 
 # Position sizing with consensus confidence
