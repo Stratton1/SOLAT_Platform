@@ -1,0 +1,351 @@
+/* ============================================================================
+   SOLAT Dashboard - Pro-Grade Trading Terminal Styling
+   Dark Mode Polish with Information Density
+   ============================================================================ */
+
+/* ============================================================================
+   GLOBAL STYLES
+   ============================================================================ */
+
+:root {
+    --primary-bg: #0e1117;
+    --secondary-bg: #161b22;
+    --tertiary-bg: #21262d;
+    --card-bg: #1c2128;
+    --border-color: #30363d;
+    --text-primary: #c9d1d9;
+    --text-secondary: #8b949e;
+    --accent-green: #1f6feb;
+    --accent-red: #ff6b6b;
+    --accent-yellow: #ffd700;
+    --success: #31a24c;
+    --warning: #f0883e;
+    --danger: #ff6b6b;
+    --font-mono: 'Roboto Mono', 'Courier New', monospace;
+}
+
+/* ============================================================================
+   CARD & CONTAINER STYLING
+   ============================================================================ */
+
+[data-testid="stMetricContainer"] {
+    background-color: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+[data-testid="stMetricContainer"]:hover {
+    border-color: var(--accent-green);
+    box-shadow: 0 4px 12px rgba(31, 111, 235, 0.2);
+    transform: translateY(-2px);
+}
+
+[data-testid="stMetricValue"] {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 28px;
+    color: var(--text-primary);
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+[data-testid="stMetricDeltaContainer"] {
+    color: var(--success);
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+/* ============================================================================
+   DATAFRAME & TABLE STYLING
+   ============================================================================ */
+
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+[data-testid="stDataFrame"] thead {
+    background-color: var(--tertiary-bg);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 11px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+[data-testid="stDataFrame"] th {
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    padding: 12px 8px;
+}
+
+[data-testid="stDataFrame"] td {
+    padding: 10px 8px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+[data-testid="stDataFrame"] tbody tr:hover {
+    background-color: var(--tertiary-bg);
+}
+
+/* Signal-specific row styling */
+[data-testid="stDataFrame"] tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+/* ============================================================================
+   HEADER & TYPOGRAPHY
+   ============================================================================ */
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+h1 {
+    font-size: 32px;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+}
+
+h2 {
+    font-size: 24px;
+    margin-top: 24px;
+    margin-bottom: 16px;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 8px;
+}
+
+h3 {
+    font-size: 18px;
+    margin-top: 16px;
+    margin-bottom: 12px;
+}
+
+/* ============================================================================
+   BUTTON STYLING
+   ============================================================================ */
+
+[data-testid="stButton"] > button {
+    background-color: var(--accent-green);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 12px;
+}
+
+[data-testid="stButton"] > button:hover {
+    background-color: #1a5fd0;
+    box-shadow: 0 4px 12px rgba(31, 111, 235, 0.3);
+    transform: translateY(-1px);
+}
+
+[data-testid="stButton"] > button:active {
+    transform: translateY(0);
+}
+
+/* ============================================================================
+   EXPANDER STYLING
+   ============================================================================ */
+
+[data-testid="stExpander"] {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--card-bg);
+    margin: 12px 0;
+}
+
+[data-testid="stExpanderDetails"] {
+    padding: 16px;
+    background-color: var(--secondary-bg);
+    border-top: 1px solid var(--border-color);
+}
+
+/* ============================================================================
+   DIVIDER STYLING
+   ============================================================================ */
+
+hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 20px 0;
+}
+
+/* ============================================================================
+   COLUMN & LAYOUT
+   ============================================================================ */
+
+[data-testid="column"] {
+    gap: 16px;
+}
+
+/* ============================================================================
+   STATUS & BADGE STYLING
+   ============================================================================ */
+
+.status-active {
+    background-color: var(--success);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-normal {
+    background-color: var(--warning);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-dormant {
+    background-color: var(--danger);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.signal-buy {
+    color: var(--success);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.signal-sell {
+    color: var(--danger);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.signal-neutral {
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+/* ============================================================================
+   PLOTLY CHART STYLING
+   ============================================================================ */
+
+[data-testid="stPlotlyChart"] {
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    padding: 12px;
+    background-color: var(--card-bg);
+}
+
+/* ============================================================================
+   SIDEBAR STYLING
+   ============================================================================ */
+
+[data-testid="stSidebar"] {
+    background-color: var(--secondary-bg);
+    border-right: 1px solid var(--border-color);
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+}
+
+/* ============================================================================
+   METRIC TICKER STYLING
+   ============================================================================ */
+
+.ticker-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: var(--tertiary-bg);
+    border-radius: 6px;
+    margin-right: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.ticker-symbol {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.ticker-price {
+    color: var(--text-secondary);
+}
+
+.ticker-change-positive {
+    color: var(--success);
+}
+
+.ticker-change-negative {
+    color: var(--danger);
+}
+
+/* ============================================================================
+   INFO & HELP TEXT
+   ============================================================================ */
+
+.info-text {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+    margin: 8px 0;
+}
+
+.help-text {
+    background-color: var(--tertiary-bg);
+    border-left: 3px solid var(--accent-green);
+    padding: 12px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin: 12px 0;
+}
+
+/* ============================================================================
+   RESPONSIVENESS
+   ============================================================================ */
+
+@media (max-width: 768px) {
+    [data-testid="stMetricValue"] {
+        font-size: 20px;
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+
+    h2 {
+        font-size: 18px;
+    }
+}

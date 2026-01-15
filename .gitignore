@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Mac OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# SOLAT Specific
+# ----------------
+# Ignore the database (it's local state)
+data/db/*.db
+data/db/*.db-wal
+data/db/*.db-shm
+
+# Ignore logs
+data/logs/*.log
+
+# Ignore heavy knowledge base files (PDFs)
+# You don't want to push GBs of books to GitHub
+data/knowledge_base/*
+data/cache/*
+
+# Keep the folders, but ignore content
+!data/knowledge_base/.gitkeep
+!data/cache/.gitkeep
+
+# Security
+# ----------------
+# NEVER commit secrets
+config/secrets.toml

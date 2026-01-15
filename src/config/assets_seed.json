@@ -1,0 +1,22 @@
+[
+  {
+    "symbol": "BTC/USDT",
+    "source": "ccxt",
+    "status": "active"
+  },
+  {
+    "symbol": "ETH/USDT",
+    "source": "ccxt",
+    "status": "active"
+  },
+  {
+    "symbol": "AAPL",
+    "source": "yfinance",
+    "status": "active"
+  },
+  {
+    "symbol": "GC=F",
+    "source": "yfinance",
+    "status": "active"
+  }
+]
