@@ -1,0 +1,22 @@
+[theme]
+primaryColor = "#00FF00"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA"
+font = "monospace"
+
+[layout]
+wideMode = true
+initialSidebarState = "expanded"
+
+[client]
+showErrorDetails = true
+toolbarMode = "minimal"
+
+[logger]
+level = "info"
+
+[server]
+headless = true
+port = 8501
+runOnSave = true

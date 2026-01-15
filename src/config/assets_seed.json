@@ -10,13 +10,23 @@
     "status": "active"
   },
   {
-    "symbol": "AAPL",
-    "source": "yfinance",
+    "symbol": "CS.D.GBPUSD.TODAY.IP",
+    "source": "ig",
     "status": "active"
   },
   {
-    "symbol": "GC=F",
-    "source": "yfinance",
+    "symbol": "CS.D.EURUSD.TODAY.IP",
+    "source": "ig",
     "status": "active"
+  },
+  {
+    "symbol": "CS.D.USCGC.TODAY.IP",
+    "source": "ig",
+    "status": "active"
+  },
+  {
+    "symbol": "CS.D.USOIL.TODAY.IP",
+    "source": "ig",
+    "status": "normal"
   }
 ]

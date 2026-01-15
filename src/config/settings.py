@@ -110,6 +110,40 @@ PAPER_TRADING_MODE: bool = True  # Set to False for live trading (requires appro
 # VALIDATION & CONSTRAINTS
 # ============================================================================
 
+# ============================================================================
+# CONSENSUS VOTING PARAMETERS (Council of 6)
+# ============================================================================
+# Multi-agent democratic voting system that learns from trade outcomes
+
+CONSENSUS_VOTING_ENABLED: bool = True
+CONSENSUS_THRESHOLD_EXECUTE: float = 0.60  # Execute if |score| > 0.60
+CONSENSUS_THRESHOLD_DYNAMIC: bool = False  # If True, threshold adjusts with volatility
+
+# Reinforcement Learning parameters
+CONSENSUS_LEARNING_RATE: float = 0.02  # Alpha for weight updates (conservative, 2-week half-life)
+CONSENSUS_LEARNING_MIN_WEIGHT: float = 0.05  # Minimum agent weight (5%)
+CONSENSUS_LEARNING_MAX_WEIGHT: float = 0.35  # Maximum agent weight (35%)
+CONSENSUS_LEARNING_RESET_DAYS: int = 7  # Reset agents hitting max weight
+
+# Initial agent weights (domain-expertise-based, not equal)
+AGENT_INITIAL_WEIGHTS: dict = {
+    'regime': 0.20,           # HMM regime is proven
+    'strategy': 0.22,         # Core Ichimoku strategy
+    'sniper': 0.15,           # Microstructure analysis
+    'news': 0.12,             # Sentiment is weaker signal
+    'seasonality': 0.16,      # Time-based patterns
+    'institutional': 0.15,    # Portfolio constraints
+}
+
+# Position sizing with consensus confidence
+POSITION_SIZE_SCALING: bool = True  # Scale position by |consensus_score|
+POSITION_SIZE_MIN_RATIO: float = 0.30  # Minimum 30% of Kelly (when consensus=0.3)
+
+# Audit and monitoring
+CONSENSUS_VOTING_AUDIT_LOG: bool = True  # Log all votes to DB
+CONSENSUS_VOTING_VERBOSE: bool = False  # Detailed vote logging to console
+
+
 def validate_settings() -> bool:
     """
     Validate that all settings are within acceptable ranges.
