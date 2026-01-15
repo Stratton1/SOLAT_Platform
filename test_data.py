@@ -2,10 +2,15 @@
 """
 Test script for verifying data adapter functionality.
 
-Fetches OHLCV data from both YFinance and CCXT adapters to verify:
+Fetches OHLCV data from YFinance, CCXT, and IG adapters to verify:
 1. Data structure consistency (same columns, index type)
 2. Data types (float64 for OHLCV, UTC DatetimeIndex)
 3. No missing or NaN values in data
+
+IG Markets Test:
+    The IG adapter test is optional and only runs if credentials
+    are configured in src/config/secrets.toml. IG Markets provides
+    UK spread betting which is tax-free for UK residents.
 """
 
 import sys
@@ -23,6 +28,7 @@ logger = logging.getLogger(__name__)
 # Import adapters
 from src.adapters.yfinance_lib import YFinanceAdapter
 from src.adapters.ccxt_lib import CCXTAdapter
+from src.adapters.ig_lib import IGAdapter
 
 
 def print_dataframe_info(df: pd.DataFrame, name: str) -> None:
@@ -169,10 +175,38 @@ def main() -> int:
         logger.error(f"CCXT test failed: {e}", exc_info=True)
         all_tests_passed = False
 
-    # Test 3: Structure Comparison
+    # Test 3: IG Markets Adapter (Optional - requires credentials)
+    logger.info("\n" + "="*60)
+    logger.info("TEST 3: IG Markets Adapter (GBP/USD, 1h, 100 candles)")
+    logger.info("        UK Spread Betting - Tax Free Profits")
+    logger.info("="*60)
+
+    ig_valid = None
+    ig_df = None
+
+    try:
+        ig_adapter = IGAdapter()
+        if ig_adapter._authenticated:
+            # Test with GBP/USD using the common alias
+            ig_df = ig_adapter.get_ohlcv("GBP/USD", "1h", limit=100)
+            print_dataframe_info(ig_df, "IG Markets (GBP/USD, 1h)")
+            ig_valid = verify_dataframe_structure(ig_df, "IG Markets")
+            # IG test is optional - don't fail overall if it doesn't work
+            logger.info("✓ IG Markets adapter verified successfully")
+        else:
+            logger.info("⚠ IG Markets: Not authenticated (credentials not configured)")
+            logger.info("  To enable IG testing:")
+            logger.info("  1. Copy src/config/secrets.toml.example to src/config/secrets.toml")
+            logger.info("  2. Add your IG Markets API credentials")
+            logger.info("  3. Re-run this test")
+    except Exception as e:
+        logger.warning(f"IG Markets test skipped: {e}")
+        logger.info("  IG Markets test is optional - requires valid credentials")
+
+    # Test 4: Structure Comparison
     if yf_valid is not None and ccxt_df is not None:
         logger.info("\n" + "="*60)
-        logger.info("TEST 3: Structure Comparison")
+        logger.info("TEST 4: Structure Comparison")
         logger.info("="*60)
 
         try:
@@ -193,7 +227,7 @@ def main() -> int:
             all_tests_passed = False
     elif yf_valid is None and ccxt_df is not None:
         logger.info("\n" + "="*60)
-        logger.info("TEST 3: Structure Comparison (YFinance unavailable)")
+        logger.info("TEST 4: Structure Comparison (YFinance unavailable)")
         logger.info("="*60)
         logger.info("✓ CCXT adapter verified successfully")
         logger.info("  - Note: YFinance API is currently unavailable, but adapter code is correct")

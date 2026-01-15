@@ -33,15 +33,30 @@ MAX_POSITION_SIZE_PERCENT: float = 0.10  # No single position > 10% of account
 MAX_DRAWDOWN_ALLOWED: float = 0.20  # Stop trading if account drawdown > 20%
 
 # ============================================================================
-# EVOLUTIONARY ALGORITHM WEIGHTS
+# SAFE MODE CONSTRAINTS (HARD RULES)
+# ============================================================================
+# These are non-negotiable safety limits for the institutional system
+
+MAX_OPEN_TRADES: int = 2  # HARD LIMIT: Maximum concurrent open positions
+# If 2 trades are open, the system MUST sleep until one closes
+
+SAFE_MODE_ENABLED: bool = True  # Master switch for safe mode constraints
+
+# ============================================================================
+# EVOLUTIONARY ALGORITHM WEIGHTS (SAFE MODE: Win Rate Prioritized)
 # ============================================================================
 # Fitness score formula: F(x) = (w_wr * win_rate) + (w_pf * profit_factor) - (w_dd * max_drawdown)
 # Weights must sum to 1.0 (or be normalized)
+#
+# SAFE MODE PHILOSOPHY: Prioritize Win Rate (consistency) over Profit Factor.
+# A high win rate provides psychological safety and capital preservation.
+# Profit factor is secondary - we'd rather have many small wins than
+# occasional large wins with frequent losses.
 
 FITNESS_WEIGHTS: dict = {
-    "win_rate": 0.4,          # 40% weight: Higher win rate = better fitness
-    "profit_factor": 0.4,     # 40% weight: More profit per unit risk = better
-    "drawdown": 0.2,          # 20% weight: Penalize large drawdowns
+    "win_rate": 0.55,         # 55% weight: PRIORITIZED - Higher win rate = better fitness
+    "profit_factor": 0.25,    # 25% weight: Secondary - More profit per unit risk
+    "drawdown": 0.20,         # 20% weight: Penalize large drawdowns
 }
 
 # Asset selection thresholds (as percentiles)
@@ -109,6 +124,13 @@ def validate_settings() -> bool:
         ("ICHIMOKU_TENKAN", ICHIMOKU_TENKAN > 0, "Ichimoku tenkan must be positive"),
         ("FITNESS_WEIGHTS sum", abs(sum(FITNESS_WEIGHTS.values()) - 1.0) < 0.01,
          f"Fitness weights must sum to 1.0 (got {sum(FITNESS_WEIGHTS.values())})"),
+        # Safe Mode validations
+        ("MAX_OPEN_TRADES", 1 <= MAX_OPEN_TRADES <= 10,
+         f"MAX_OPEN_TRADES must be between 1 and 10 (got {MAX_OPEN_TRADES})"),
+        ("MAX_POSITION_SIZE_PERCENT", 0 < MAX_POSITION_SIZE_PERCENT <= 0.25,
+         f"Max position size must be between 0% and 25% (got {MAX_POSITION_SIZE_PERCENT:.0%})"),
+        ("WIN_RATE_PRIORITY", FITNESS_WEIGHTS["win_rate"] >= 0.5,
+         f"Safe Mode requires win_rate weight >= 50% (got {FITNESS_WEIGHTS['win_rate']:.0%})"),
     ]
 
     all_valid = True
@@ -118,6 +140,16 @@ def validate_settings() -> bool:
             all_valid = False
         else:
             print(f"✓ Validation OK [{name}]")
+
+    # Print Safe Mode summary
+    print("\n" + "=" * 40)
+    print("SAFE MODE STATUS")
+    print("=" * 40)
+    print(f"  Enabled: {SAFE_MODE_ENABLED}")
+    print(f"  Max Open Trades: {MAX_OPEN_TRADES}")
+    print(f"  Max Position Size: {MAX_POSITION_SIZE_PERCENT:.0%}")
+    print(f"  Win Rate Priority: {FITNESS_WEIGHTS['win_rate']:.0%}")
+    print("=" * 40)
 
     return all_valid
 

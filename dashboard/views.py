@@ -101,11 +101,93 @@ def render_ticker_header(df: pd.DataFrame) -> None:
                     st.write("⚪ NEUTRAL")
 
 
-def render_metric_cards(df: pd.DataFrame) -> None:
+def render_news_sentiment_gauge(sentiment_score: float = 50.0) -> None:
     """
-    Render a 4-column metric card row showing key KPIs.
+    Render the News Sentiment gauge showing market mood.
 
-    Shows: Total Assets, Active Signals, Portfolio Fitness, Last Heartbeat
+    Args:
+        sentiment_score: Sentiment score from 0 (Extreme Fear) to 100 (Extreme Greed)
+    """
+    # Determine mood and styling
+    if sentiment_score < 20:
+        mood = "EXTREME FEAR"
+        emoji = "😱"
+        color = "#ff0000"
+        restriction = "All Longs BLOCKED"
+    elif sentiment_score < 30:
+        mood = "Fear"
+        emoji = "😰"
+        color = "#ff6b6b"
+        restriction = "Longs Restricted"
+    elif sentiment_score > 80:
+        mood = "EXTREME GREED"
+        emoji = "🤑"
+        color = "#00ff00"
+        restriction = "All Shorts BLOCKED"
+    elif sentiment_score > 70:
+        mood = "Greed"
+        emoji = "😄"
+        color = "#31a24c"
+        restriction = "Shorts Restricted"
+    else:
+        mood = "Neutral"
+        emoji = "😐"
+        color = "#f0883e"
+        restriction = "No Restrictions"
+
+    # Render gauge-like display
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(90deg,
+            #ff0000 0%,
+            #ff6b6b 20%,
+            #f0883e 40%,
+            #f0883e 60%,
+            #31a24c 80%,
+            #00ff00 100%
+        );
+        height: 8px;
+        border-radius: 4px;
+        margin: 10px 0;
+        position: relative;
+    ">
+        <div style="
+            position: absolute;
+            left: {sentiment_score}%;
+            top: -4px;
+            width: 4px;
+            height: 16px;
+            background: white;
+            border: 2px solid #333;
+            border-radius: 2px;
+            transform: translateX(-50%);
+        "></div>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #8b949e;">
+        <span>Fear</span>
+        <span>Neutral</span>
+        <span>Greed</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Display mood text
+    st.markdown(f"""
+    <div style="text-align: center; margin-top: 5px;">
+        <span style="font-size: 24px;">{emoji}</span>
+        <span style="font-size: 18px; font-weight: bold; color: {color};">{mood}</span>
+        <span style="font-size: 14px; color: #8b949e;">({sentiment_score:.0f}/100)</span>
+    </div>
+    <div style="text-align: center; font-size: 12px; color: #8b949e; margin-top: 5px;">
+        {restriction}
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_metric_cards(df: pd.DataFrame, news_sentiment: float = 50.0) -> None:
+    """
+    Render a 5-column metric card row showing key KPIs.
+
+    Shows: Total Assets, Active Signals, Portfolio Fitness, News Sentiment, Last Heartbeat
     """
     if df is None or df.empty:
         st.warning("⏳ No market data available yet")
@@ -118,8 +200,8 @@ def render_metric_cards(df: pd.DataFrame) -> None:
     active_count = len(df[df.get("status", "") == "active"])
     avg_fitness = df["fitness_score"].mean() if "fitness_score" in df.columns else 0.0
 
-    # Render 4-column layout
-    col1, col2, col3, col4 = st.columns(4, gap="medium")
+    # Render 5-column layout
+    col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
 
     with col1:
         st.metric(
@@ -147,24 +229,43 @@ def render_metric_cards(df: pd.DataFrame) -> None:
         )
 
     with col4:
+        # News Sentiment
+        if news_sentiment < 30:
+            mood_emoji = "😰"
+            mood_text = "Fear"
+            restriction = "Longs Blocked"
+        elif news_sentiment > 70:
+            mood_emoji = "😄"
+            mood_text = "Greed"
+            restriction = "Shorts Blocked"
+        else:
+            mood_emoji = "😐"
+            mood_text = "Neutral"
+            restriction = "No Blocks"
+
+        st.metric(
+            label="📰 Market Mood",
+            value=f"{mood_emoji} {news_sentiment:.0f}",
+            delta=f"{mood_text} - {restriction}",
+            delta_color="off"
+        )
+
+    with col5:
         # Heartbeat timestamp
         latest_update = df["updated_at"].max() if "updated_at" in df.columns else datetime.now()
         time_ago = (datetime.now() - pd.to_datetime(latest_update)).total_seconds()
         if time_ago < 120:
             status = "🟢 Live"
-            delta_color = "off"
         elif time_ago < 600:
             status = "🟡 Recent"
-            delta_color = "off"
         else:
             status = "🔴 Stale"
-            delta_color = "off"
 
         st.metric(
-            label="💓 Sentinel Heartbeat",
+            label="💓 Heartbeat",
             value=status,
             delta=f"{int(time_ago)}s ago",
-            delta_color=delta_color
+            delta_color="off"
         )
 
 
@@ -217,6 +318,19 @@ def render_sidebar() -> Tuple[bool, bool]:
         **Cloud Colors:**
         - 🟩 **Green Cloud**: Bullish (Senkou A > B)
         - 🟥 **Red Cloud**: Bearish (Senkou A < B)
+
+        **Order Flow (Microstructure):**
+        - 🟢🟢 **Strong Buy Pressure**: OI > +0.20
+        - 🟢 **Mild Buy Pressure**: OI > 0
+        - 🔴 **Mild Sell Pressure**: OI < 0
+        - 🔴🔴 **Strong Sell Pressure**: OI < -0.20
+
+        **News Sentiment (0-100):**
+        - 😱 **Extreme Fear** (0-20): All Longs blocked
+        - 😰 **Fear** (20-30): Longs restricted
+        - 😐 **Neutral** (30-70): No restrictions
+        - 😄 **Greed** (70-80): Shorts restricted
+        - 🤑 **Extreme Greed** (80-100): All Shorts blocked
         """)
 
         st.divider()
@@ -247,25 +361,49 @@ def render_surveillance_table(df: pd.DataFrame) -> None:
     Render the main surveillance table with colored indicators.
 
     Uses styled dataframe with conditional formatting for signals.
+    Includes Microstructure Order Imbalance (OI) indicator.
     """
     if df is None or df.empty:
         st.warning("No market data available yet. Waiting for first scan...")
         return
 
     # Prepare display columns
-    display_df = df[[
-        "symbol", "source", "status", "fitness_score", "close_price",
-        "cloud_status", "chikou_conf"
-    ]].copy()
+    base_cols = ["symbol", "source", "status", "fitness_score", "close_price",
+                 "cloud_status", "chikou_conf"]
+
+    # Add order_imbalance if available
+    if "order_imbalance" in df.columns:
+        base_cols.append("order_imbalance")
+
+    display_df = df[base_cols].copy()
 
     # Rename for display
-    display_df.columns = [
-        "Asset", "Source", "Status", "Fitness", "Price", "Cloud", "Signal"
-    ]
+    col_names = ["Asset", "Source", "Status", "Fitness", "Price", "Cloud", "Signal"]
+    if "order_imbalance" in df.columns:
+        col_names.append("Order Flow")
+
+    display_df.columns = col_names
 
     # Format numeric columns
     display_df["Fitness"] = display_df["Fitness"].apply(lambda x: f"{x:.4f}")
     display_df["Price"] = display_df["Price"].apply(lambda x: f"${x:,.2f}")
+
+    # Format Order Flow as visual indicator
+    if "Order Flow" in display_df.columns:
+        def format_order_imbalance(val):
+            """Format OI as visual bar indicator."""
+            if pd.isna(val) or val == 0:
+                return "⚪ 0.00"
+            elif val > 0.2:
+                return f"🟢🟢 +{val:.2f}"
+            elif val > 0:
+                return f"🟢 +{val:.2f}"
+            elif val < -0.2:
+                return f"🔴🔴 {val:.2f}"
+            else:
+                return f"🔴 {val:.2f}"
+
+        display_df["Order Flow"] = display_df["Order Flow"].apply(format_order_imbalance)
 
     # Create styled dataframe with conditional formatting
     def color_signal(val):
@@ -307,25 +445,35 @@ def render_surveillance_table(df: pd.DataFrame) -> None:
         subset=["Cloud"]
     )
 
+    # Build column config dynamically
+    column_config = {
+        "Asset": st.column_config.TextColumn(width=80),
+        "Source": st.column_config.TextColumn(width=70),
+        "Status": st.column_config.TextColumn(width=80),
+        "Fitness": st.column_config.TextColumn(width=90),
+        "Price": st.column_config.TextColumn(width=100),
+        "Cloud": st.column_config.TextColumn(width=80),
+        "Signal": st.column_config.TextColumn(width=90),
+    }
+
+    # Add Order Flow column config if present
+    if "Order Flow" in display_df.columns:
+        column_config["Order Flow"] = st.column_config.TextColumn(
+            width=100,
+            help="Order Imbalance: 🟢 = Buy Pressure, 🔴 = Sell Pressure"
+        )
+
     st.dataframe(
         styled_df,
         use_container_width=True,
         height=400,
-        column_config={
-            "Asset": st.column_config.TextColumn(width=80),
-            "Source": st.column_config.TextColumn(width=70),
-            "Status": st.column_config.TextColumn(width=80),
-            "Fitness": st.column_config.TextColumn(width=90),
-            "Price": st.column_config.TextColumn(width=100),
-            "Cloud": st.column_config.TextColumn(width=80),
-            "Signal": st.column_config.TextColumn(width=90),
-        }
+        column_config=column_config
     )
 
     # Add helpful footer
     st.caption(
         "💡 **Tip:** Hover over any value for details. "
-        "Strong Buy = Green Cloud + Positive Tenkan/Kijun Cross"
+        "Strong Buy = Green Cloud + Positive Tenkan/Kijun Cross + 🟢🟢 Order Flow"
     )
 
 
