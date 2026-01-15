@@ -477,3 +477,162 @@ def render_footer() -> None:
     </div>
     """
     st.markdown(footer_html, unsafe_allow_html=True)
+
+
+# ============================================================================
+# BACKWARD-COMPATIBLE FUNCTIONS (for app.py compatibility)
+# ============================================================================
+
+
+def load_custom_css() -> None:
+    """Backward-compatible wrapper for load_terminal_css."""
+    load_terminal_css()
+
+
+def render_traffic_light_header(regime: str) -> None:
+    """
+    Backward-compatible traffic light header.
+    Maps regime to Terminal Mode style.
+    """
+    regime = regime.lower() if regime else "neutral"
+
+    # Determine status color and text
+    if regime == "bull":
+        status_color = "#00FF41"
+        status_text = "BULL"
+        trade_status = "LONG_ENABLED"
+    elif regime == "bear":
+        status_color = "#FF0055"
+        status_text = "BEAR"
+        trade_status = "SHORT_ENABLED"
+    elif regime == "chop":
+        status_color = "#FFD700"
+        status_text = "CHOP"
+        trade_status = "TRADING_HALTED"
+    else:
+        status_color = "#8b949e"
+        status_text = "DETECTING"
+        trade_status = "AWAITING_DATA"
+
+    header_html = f"""
+    <div style="
+        font-family: 'Courier New', monospace;
+        background: #0E1117;
+        border: 2px solid {status_color};
+        padding: 20px;
+        margin-bottom: 16px;
+        text-align: center;
+    ">
+        <div style="color: {status_color}; font-size: 32px; font-weight: bold; margin-bottom: 8px;">
+            [{status_text}]
+        </div>
+        <div style="color: #8b949e; font-size: 14px;">
+            REGIME: {status_text} | STATUS: [{trade_status}]
+        </div>
+    </div>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
+
+
+def render_ticker_header(df: pd.DataFrame) -> None:
+    """Backward-compatible ticker header showing asset count and price summary."""
+    if df is None or df.empty:
+        st.warning("[NO_DATA] Waiting for market data...")
+        return
+
+    total_assets = len(df)
+    active_count = len(df[df['status'] == 'active']) if 'status' in df.columns else 0
+
+    ticker_html = f"""
+    <div style="
+        font-family: 'Courier New', monospace;
+        color: #00FF41;
+        background: #1a1f2e;
+        padding: 8px 12px;
+        border-left: 3px solid #00FF41;
+        margin-bottom: 12px;
+        font-size: 12px;
+    ">
+        ASSETS: {total_assets} | ACTIVE: {active_count} | MODE: [SURVEILLANCE]
+    </div>
+    """
+    st.markdown(ticker_html, unsafe_allow_html=True)
+
+
+def render_metric_cards(df: pd.DataFrame) -> None:
+    """Backward-compatible metric cards in Terminal Mode style."""
+    if df is None or df.empty:
+        return
+
+    col1, col2, col3, col4, col5 = st.columns(5, gap="small")
+
+    # Calculate metrics
+    total_assets = len(df)
+    active_count = len(df[df['status'] == 'active']) if 'status' in df.columns else 0
+
+    # Get regime if available
+    regime = df['regime'].iloc[0] if 'regime' in df.columns and not df['regime'].isna().all() else "DETECTING"
+    regime = regime.upper() if regime else "DETECTING"
+
+    # Get consensus if available
+    consensus = df['consensus_score'].iloc[0] if 'consensus_score' in df.columns and not df['consensus_score'].isna().all() else None
+    consensus_text = f"{consensus:.2f}" if consensus is not None else "N/A"
+
+    # Get news sentiment if available
+    news = df['news_sentiment'].iloc[0] if 'news_sentiment' in df.columns and not df['news_sentiment'].isna().all() else None
+    news_text = f"{news:.0f}" if news is not None else "N/A"
+
+    with col1:
+        st.metric("ASSETS", f"{total_assets}")
+    with col2:
+        st.metric("ACTIVE", f"{active_count}")
+    with col3:
+        st.metric("REGIME", f"[{regime}]")
+    with col4:
+        st.metric("CONSENSUS", consensus_text)
+    with col5:
+        st.metric("NEWS", news_text)
+
+
+def render_strategy_explanation() -> None:
+    """Backward-compatible strategy explanation panel."""
+    st.markdown("### STRATEGY_CONFIG", unsafe_allow_html=True)
+    st.markdown("""
+    **Ichimoku Cloud Strategy:**
+    - [BUY]: Price > Cloud + Tenkan > Kijun + Chikou Confirmation
+    - [SELL]: Price < Cloud + Tenkan < Kijun + Chikou Confirmation
+    - [HOLD]: No clear signal alignment
+
+    **Council of 6 Agents:**
+    - REGIME: HMM market state detector
+    - STRATEGY: Ichimoku signal generator
+    - SNIPER: Order book microstructure
+    - NEWS: NLP sentiment analysis
+    - SEASONALITY: Time pattern detection
+    - INSTITUTIONAL: Kelly position sizing
+    """)
+
+
+def render_evolution_metrics(df: pd.DataFrame = None) -> None:
+    """Backward-compatible evolution metrics display."""
+    st.markdown("### EVOLUTION_METRICS", unsafe_allow_html=True)
+    st.info("[EVOLUTION] Fitness scores updated every 4 hours")
+
+
+def render_trades_summary(df: pd.DataFrame = None) -> None:
+    """Backward-compatible trades summary."""
+    render_trades_log()
+
+
+def render_debug_info() -> None:
+    """Backward-compatible debug info panel."""
+    now = datetime.now()
+    st.markdown("### DEBUG_INFO", unsafe_allow_html=True)
+    st.code(f"""
+SYSTEM_TIME: {now.strftime('%Y-%m-%d %H:%M:%S')}
+DATABASE: data/db/trading_engine.db
+MODE: WAL_ENABLED
+REFRESH: 30_SECONDS
+COUNCIL: 6_AGENTS
+VERSION: TERMINAL_v2.0
+    """)

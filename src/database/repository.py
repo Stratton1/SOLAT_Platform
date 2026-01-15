@@ -60,16 +60,24 @@ def init_db() -> None:
             )
         """)
 
-        # Create market_snapshots table
+        # Create market_snapshots table (Council of 6 enabled)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS market_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
-                close_price REAL NOT NULL,
+                close_price REAL,
+                -- Technicals
                 cloud_status TEXT,
                 tk_cross TEXT,
-                chikou_conf REAL,
+                chikou_conf TEXT,
+                -- Council of 6 Data
                 regime TEXT,
+                consensus_score REAL,
+                agent_votes TEXT,
+                order_imbalance REAL,
+                news_sentiment REAL,
+                signal TEXT,
+                -- Metadata
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (symbol) REFERENCES assets(symbol)
             )
@@ -198,10 +206,13 @@ def _run_migrations(cursor: sqlite3.Cursor) -> None:
         ("trades", "unit_number", "INTEGER DEFAULT 1"),
         ("trades", "trailing_stop_price", "REAL"),
         ("trades", "is_open", "INTEGER DEFAULT 1"),
-        # Market snapshots regime column (if missing)
+        # Market snapshots - Council of 6 columns
         ("market_snapshots", "regime", "TEXT"),
-        # Market snapshots microstructure columns
+        ("market_snapshots", "consensus_score", "REAL"),
+        ("market_snapshots", "agent_votes", "TEXT"),
         ("market_snapshots", "order_imbalance", "REAL"),
+        ("market_snapshots", "news_sentiment", "REAL"),
+        ("market_snapshots", "signal", "TEXT"),
         ("market_snapshots", "spread_bps", "REAL"),
         # Assets table extension for optimal strategy
         ("assets", "optimal_strategy", "TEXT DEFAULT 'ichimoku_standard'"),
