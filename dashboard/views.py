@@ -199,7 +199,7 @@ def render_council_grid(votes_dict: Dict[str, float], reasons_dict: Dict[str, st
 def render_surveillance_table(df: pd.DataFrame) -> None:
     """
     Render high-density surveillance table with Terminal Mode styling.
-    Text-first: SYMBOL | PRICE | REGIME | CONSENSUS | ACTION
+    Text-first: SYMBOL | PRICE | REGIME | CONSENSUS | SIGNAL
     """
     if df is None or df.empty:
         st.warning("[ERROR] No market data available")
@@ -207,56 +207,70 @@ def render_surveillance_table(df: pd.DataFrame) -> None:
 
     st.markdown("### MARKET SURVEILLANCE", unsafe_allow_html=True)
 
-    # Prepare columns for display
-    display_cols = ['symbol', 'close_price', 'fitness_score', 'status']
-    if 'cloud_status' in df.columns:
-        display_cols.append('cloud_status')
-    if 'chikou_conf' in df.columns:
-        display_cols.append('chikou_conf')
+    # Build display dataframe with available columns
+    display_data = []
 
-    display_df = df[display_cols].copy()
+    for _, row in df.iterrows():
+        entry = {
+            'SYMBOL': row.get('symbol', 'N/A'),
+            'PRICE': f"${row.get('close_price', 0):,.2f}" if row.get('close_price') else 'N/A',
+        }
 
-    # Rename columns
-    display_df.columns = ['SYMBOL', 'PRICE', 'FITNESS', 'STATUS', *display_df.columns[4:].tolist()]
-
-    # Format for terminal display
-    display_df['PRICE'] = display_df['PRICE'].apply(lambda x: f"${x:,.2f}")
-    display_df['FITNESS'] = display_df['FITNESS'].apply(lambda x: f"{x:.4f}")
-
-    # Status badges
-    def status_badge(s):
-        if s == 'active':
-            return '[ACTIVE]'
-        elif s == 'normal':
-            return '[NORMAL]'
-        else:
-            return '[DORMANT]'
-
-    display_df['STATUS'] = display_df['STATUS'].apply(status_badge)
-
-    # Signal badges
-    if 'chikou_conf' in display_df.columns:
-        def signal_badge(s):
-            if s == 'BUY':
-                return '[BUY]'
-            elif s == 'SELL':
-                return '[SELL]'
+        # Regime badge
+        regime = row.get('regime', '')
+        if regime:
+            regime = regime.upper()
+            if regime == 'BULL':
+                entry['REGIME'] = '[BULL]'
+            elif regime == 'BEAR':
+                entry['REGIME'] = '[BEAR]'
+            elif regime == 'CHOP':
+                entry['REGIME'] = '[CHOP]'
             else:
-                return '[HOLD]'
-        display_df['chikou_conf'] = display_df['chikou_conf'].apply(signal_badge)
+                entry['REGIME'] = f'[{regime}]'
+        else:
+            entry['REGIME'] = '[---]'
+
+        # Consensus score
+        consensus = row.get('consensus_score')
+        if consensus is not None:
+            entry['CONSENSUS'] = f"{consensus:+.2f}"
+        else:
+            entry['CONSENSUS'] = 'N/A'
+
+        # Signal badge
+        signal = row.get('signal', '')
+        if signal == 'BUY':
+            entry['SIGNAL'] = '[BUY]'
+        elif signal == 'SELL':
+            entry['SIGNAL'] = '[SELL]'
+        else:
+            entry['SIGNAL'] = '[HOLD]'
+
+        # News sentiment
+        news = row.get('news_sentiment')
+        if news is not None:
+            entry['NEWS'] = f"{news:.0f}"
+        else:
+            entry['NEWS'] = 'N/A'
+
+        display_data.append(entry)
+
+    display_df = pd.DataFrame(display_data)
 
     # Render as table
     st.dataframe(
         display_df,
         use_container_width=True,
         height=400,
+        hide_index=True,
         column_config={
-            'SYMBOL': st.column_config.TextColumn(width=80),
+            'SYMBOL': st.column_config.TextColumn(width=120),
             'PRICE': st.column_config.TextColumn(width=100),
-            'FITNESS': st.column_config.TextColumn(width=90),
-            'STATUS': st.column_config.TextColumn(width=80),
-            'cloud_status': st.column_config.TextColumn(width=80),
-            'chikou_conf': st.column_config.TextColumn(width=80),
+            'REGIME': st.column_config.TextColumn(width=80),
+            'CONSENSUS': st.column_config.TextColumn(width=100),
+            'SIGNAL': st.column_config.TextColumn(width=80),
+            'NEWS': st.column_config.TextColumn(width=60),
         }
     )
 

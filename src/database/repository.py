@@ -3,18 +3,18 @@ Database repository module for SOLAT.
 Handles SQLite connection initialization with WAL mode and schema creation.
 
 Schema includes:
-- Core tables: assets, market_snapshots, trades, evolution_metrics
-- Institutional upgrade: account_balance, strategy_performance, trading_halts, seasonality_patterns
+- Core tables: assets, market_snapshots, trades
+- Council of 6: All AI agent voting data stored in market_snapshots
 """
 
 import sqlite3
 import logging
-from pathlib import Path
+import os
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from src.config.settings import DB_PATH
 
-DB_PATH = "data/db/trading_engine.db"
+logger = logging.getLogger(__name__)
 
 
 def init_db() -> None:
@@ -25,13 +25,10 @@ def init_db() -> None:
     1. Ensures the database directory exists
     2. Connects to the database
     3. Enables WAL mode for concurrent read/write access
-    4. Sets synchronous to NORMAL for performance
-    5. Creates all required tables (core + institutional upgrade)
-    6. Runs migrations to add new columns to existing tables
+    4. Creates all required tables with Council schema
     """
     # Ensure the database directory exists
-    db_dir = Path(DB_PATH).parent
-    db_dir.mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
     # Connect to the database
     conn = sqlite3.connect(DB_PATH)
@@ -43,34 +40,34 @@ def init_db() -> None:
         cursor.execute("PRAGMA synchronous=NORMAL;")
 
         # ============================================================
-        # CORE TABLES
+        # ASSETS TABLE
         # ============================================================
-
-        # Create assets table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS assets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL UNIQUE,
+                symbol TEXT PRIMARY KEY,
                 source TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Normal',
+                status TEXT DEFAULT 'active',
                 fitness_score REAL DEFAULT 0.0,
-                last_scan TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                optimal_strategy TEXT DEFAULT 'ichimoku_standard',
+                last_scan DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        # Create market_snapshots table (Council of 6 enabled)
+        # ============================================================
+        # MARKET SNAPSHOTS TABLE (Council of 6 Enabled)
+        # ============================================================
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS market_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 close_price REAL,
                 -- Technicals
                 cloud_status TEXT,
-                tk_cross TEXT,
                 chikou_conf TEXT,
-                -- Council of 6 Data
+                -- THE COUNCIL DATA (Required for Terminal Mode)
                 regime TEXT,
                 consensus_score REAL,
                 agent_votes TEXT,
@@ -78,28 +75,37 @@ def init_db() -> None:
                 news_sentiment REAL,
                 signal TEXT,
                 -- Metadata
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (symbol) REFERENCES assets(symbol)
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        # Create trades table
+        # ============================================================
+        # TRADES TABLE
+        # ============================================================
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
                 side TEXT NOT NULL,
-                entry_price REAL NOT NULL,
+                entry_price REAL,
+                size REAL,
+                stop_loss REAL,
+                take_profit REAL,
+                status TEXT DEFAULT 'open',
+                entry_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+                exit_time DATETIME,
                 exit_price REAL,
                 pnl REAL,
                 exit_reason TEXT,
-                entry_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                exit_time TIMESTAMP,
-                FOREIGN KEY (symbol) REFERENCES assets(symbol)
+                strategy_used TEXT DEFAULT 'ichimoku_standard',
+                consensus_score REAL,
+                agent_votes TEXT
             )
         """)
 
-        # Create evolution_metrics table
+        # ============================================================
+        # EVOLUTION METRICS TABLE
+        # ============================================================
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS evolution_metrics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,16 +113,14 @@ def init_db() -> None:
                 win_rate REAL DEFAULT 0.0,
                 profit_factor REAL DEFAULT 0.0,
                 max_drawdown REAL DEFAULT 0.0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (symbol) REFERENCES assets(symbol)
+                total_trades INTEGER DEFAULT 0,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
         # ============================================================
-        # INSTITUTIONAL UPGRADE TABLES
+        # ACCOUNT BALANCE TABLE (Portfolio Management)
         # ============================================================
-
-        # Account balance tracking for portfolio management
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS account_balance (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,107 +131,47 @@ def init_db() -> None:
                 peak_equity REAL DEFAULT 0.0,
                 is_halted INTEGER DEFAULT 0,
                 halt_reason TEXT,
-                recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
-        # Strategy performance tracking (per asset, per strategy)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS strategy_performance (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                strategy_name TEXT NOT NULL,
-                win_rate REAL DEFAULT 0.0,
-                sharpe_ratio REAL DEFAULT 0.0,
-                max_drawdown REAL DEFAULT 0.0,
-                total_trades INTEGER DEFAULT 0,
-                profit_factor REAL DEFAULT 0.0,
-                avg_win REAL DEFAULT 0.0,
-                avg_loss REAL DEFAULT 0.0,
-                is_optimal INTEGER DEFAULT 0,
-                calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(symbol, strategy_name)
-            )
-        """)
-
-        # Trading halts (circuit breaker)
+        # ============================================================
+        # TRADING HALTS TABLE (Circuit Breaker)
+        # ============================================================
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS trading_halts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 reason TEXT NOT NULL,
-                halt_start TIMESTAMP NOT NULL,
-                halt_end TIMESTAMP,
+                halt_start DATETIME NOT NULL,
+                halt_end DATETIME,
                 daily_drawdown REAL,
                 is_active INTEGER DEFAULT 1
             )
         """)
 
-        # Seasonality patterns for time-based analysis
+        # ============================================================
+        # AGENT WEIGHTS TABLE (Reinforcement Learning)
+        # ============================================================
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS seasonality_patterns (
+            CREATE TABLE IF NOT EXISTS agent_weights (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                pattern_type TEXT NOT NULL,
-                period_value TEXT NOT NULL,
-                avg_return REAL,
-                win_rate REAL,
-                sample_size INTEGER,
-                is_significant INTEGER DEFAULT 0,
-                calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(symbol, pattern_type, period_value)
+                agent_name TEXT NOT NULL,
+                weight REAL NOT NULL,
+                win_count INTEGER DEFAULT 0,
+                loss_count INTEGER DEFAULT 0,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(agent_name)
             )
         """)
 
-        # ============================================================
-        # MIGRATIONS: Add new columns to existing tables
-        # ============================================================
-        _run_migrations(cursor)
-
         # Commit all changes
         conn.commit()
-        logger.info("Database initialized successfully with institutional upgrade tables")
+        logger.info("Database initialized with Council Schema")
+        print("Database initialized with Council Schema")
 
     finally:
         # Ensure connection is closed
         conn.close()
-
-
-def _run_migrations(cursor: sqlite3.Cursor) -> None:
-    """
-    Run database migrations to add new columns to existing tables.
-    Uses try/except to safely handle columns that already exist.
-    """
-    migrations = [
-        # Trades table extensions for position management
-        ("trades", "position_size", "REAL"),
-        ("trades", "stop_loss_price", "REAL"),
-        ("trades", "take_profit_price", "REAL"),
-        ("trades", "strategy_name", "TEXT DEFAULT 'ichimoku_standard'"),
-        ("trades", "unit_number", "INTEGER DEFAULT 1"),
-        ("trades", "trailing_stop_price", "REAL"),
-        ("trades", "is_open", "INTEGER DEFAULT 1"),
-        # Market snapshots - Council of 6 columns
-        ("market_snapshots", "regime", "TEXT"),
-        ("market_snapshots", "consensus_score", "REAL"),
-        ("market_snapshots", "agent_votes", "TEXT"),
-        ("market_snapshots", "order_imbalance", "REAL"),
-        ("market_snapshots", "news_sentiment", "REAL"),
-        ("market_snapshots", "signal", "TEXT"),
-        ("market_snapshots", "spread_bps", "REAL"),
-        # Assets table extension for optimal strategy
-        ("assets", "optimal_strategy", "TEXT DEFAULT 'ichimoku_standard'"),
-    ]
-
-    for table, column, col_type in migrations:
-        try:
-            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-            logger.debug(f"Added column {column} to {table}")
-        except sqlite3.OperationalError as e:
-            if "duplicate column name" in str(e).lower():
-                # Column already exists, skip
-                pass
-            else:
-                logger.warning(f"Migration warning for {table}.{column}: {e}")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -238,13 +182,24 @@ def get_connection() -> sqlite3.Connection:
         sqlite3.Connection: A connection with WAL mode enabled.
     """
     conn = sqlite3.connect(DB_PATH)
-    # Ensure WAL mode on every connection
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
+
+def get_db_connection() -> sqlite3.Connection:
+    """
+    Get a SQLite connection with Row factory for dict-like access.
+
+    Returns:
+        sqlite3.Connection: A connection with row_factory set.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
     return conn
 
 
 if __name__ == "__main__":
     # Allow direct execution for testing
     init_db()
-    print(f"Database initialized at {DB_PATH}")
