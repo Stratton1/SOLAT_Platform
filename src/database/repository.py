@@ -6,23 +6,23 @@ def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-
-    # Enable WAL Mode for high performance
     cursor.execute('PRAGMA journal_mode=WAL;')
 
-    # 1. ASSETS
+    # 1. ASSETS (Added last_scan, optimal_strategy)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS assets (
         symbol TEXT PRIMARY KEY,
         source TEXT,
         status TEXT,
         fitness_score REAL,
+        last_scan DATETIME,
+        optimal_strategy TEXT,
         last_updated DATETIME,
         meta_data TEXT
     )
     ''')
 
-    # 2. MARKET SNAPSHOTS (Fixed: Added tk_cross)
+    # 2. MARKET SNAPSHOTS (Standard Council Schema)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS market_snapshots (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +42,7 @@ def init_db():
     )
     ''')
 
-    # 3. TRADES (Fixed: Added unit_number, is_open)
+    # 3. TRADES (Standard Council Schema)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS trades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +65,7 @@ def init_db():
     )
     ''')
 
-    # 4. SEASONALITY PATTERNS (Fixed: Added pattern_type, period_value, sample_size, is_significant)
+    # 4. SEASONALITY PATTERNS
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS seasonality_patterns (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,9 +92,34 @@ def init_db():
     )
     ''')
 
+    # 6. TRADING HALTS (Circuit Breaker)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS trading_halts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT,
+        halt_type TEXT,
+        reason TEXT,
+        start_time DATETIME,
+        end_time DATETIME,
+        is_active BOOLEAN DEFAULT 1
+    )
+    ''')
+
+    # 7. ACCOUNT BALANCE (Portfolio Tracking)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS account_balance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        equity REAL,
+        balance REAL,
+        daily_pnl REAL,
+        open_positions_count INTEGER
+    )
+    ''')
+
     conn.commit()
     conn.close()
-    print("Database initialized with FINAL CORRECTED Schema")
+    print("Database initialized with MASTER Schema")
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
