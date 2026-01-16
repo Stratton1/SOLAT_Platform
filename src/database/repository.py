@@ -88,7 +88,7 @@ def init_db() -> None:
         ''')
 
         # ============================================================
-        # 3. TRADES TABLE (with trailing_stop_price)
+        # 3. TRADES TABLE (with trailing_stop_price and is_open)
         # ============================================================
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS trades (
@@ -101,6 +101,7 @@ def init_db() -> None:
             take_profit REAL,
             trailing_stop_price REAL,
             status TEXT DEFAULT 'open',
+            is_open INTEGER DEFAULT 1,
             entry_time DATETIME DEFAULT CURRENT_TIMESTAMP,
             exit_time DATETIME,
             exit_price REAL,
@@ -117,15 +118,16 @@ def init_db() -> None:
         # ============================================================
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS seasonality_patterns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT NOT NULL,
-            hour INTEGER NOT NULL,
-            day_of_week INTEGER,
-            win_rate REAL,
+            pattern_type TEXT NOT NULL,
+            period_value TEXT NOT NULL,
             avg_return REAL,
-            trade_count INTEGER DEFAULT 0,
+            win_rate REAL,
+            sample_size INTEGER DEFAULT 0,
             is_significant INTEGER DEFAULT 0,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (symbol, hour)
+            calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, pattern_type, period_value)
         )
         ''')
 
