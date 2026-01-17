@@ -1,0 +1,842 @@
+================================================================================
+                    SOLAT DASHBOARD - COMPLETE FRONTEND DOCUMENTATION
+================================================================================
+
+                              Table of Contents
+--------------------------------------------------------------------------------
+1. Overview
+2. Page 1: Main Terminal (app.py)
+3. Page 2: Council War Room (pages/council_war_room.py)
+4. Page 3: Strategy Lab (pages/strategy_lab.py)
+5. Page 4: Backtester (pages/backtest.py)
+6. Page 5: The Brain - RAG (pages/brain_rag.py)
+7. Page 6: War Room Main (war_room_main.py)
+8. Shared Components (views.py)
+9. Shared Components (charts.py)
+10. CSS Theme Summary
+11. Database Tables Used by Frontend
+12. Summary
+
+================================================================================
+                                 1. OVERVIEW
+================================================================================
+
+The SOLAT dashboard is a Streamlit-based frontend that provides real-time
+monitoring and control of the autonomous trading system. It uses a Bloomberg
+Terminal-inspired aesthetic with Matrix Green (#00FF41) on Deep Space Black
+(#0E1117).
+
+Entry Point:     python run_dashboard.py -> launches dashboard/app.py
+Auto-Refresh:    Every 30 seconds via streamlit-autorefresh
+Data Source:     SQLite database (data/db/trading_engine.db) in read-only mode via WAL
+
+================================================================================
+                      2. PAGE 1: MAIN TERMINAL (app.py)
+================================================================================
+
+URL: http://localhost:8501 (root)
+
+--------------------------------------------------------------------------------
+COMPONENTS ON THIS PAGE:
+--------------------------------------------------------------------------------
+
++-------------------+-------------+---------------------------+------------------+
+| Component         | Location    | Data Source               | Purpose          |
++-------------------+-------------+---------------------------+------------------+
+| Header Bar        | Top         | System clock + hardcoded  | Shows system     |
+|                   |             |                           | status           |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left panel  | N/A                       | Navigation &     |
+| Command Center    |             |                           | filters          |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left panel  | User input                | Filter           |
+| Filters           |             |                           | surveillance     |
+|                   |             |                           | table            |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left panel  | Static                    | Reference guide  |
+| Signal Legend     |             |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left panel  | Static                    | Risk limits      |
+| Hard Constraints  |             |                           | display          |
++-------------------+-------------+---------------------------+------------------+
+| Market            | Main area   | market_snapshots table    | Real-time        |
+| Surveillance      |             |                           | market data      |
+| Table             |             |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Council of 6      | Below       | market_snapshots.         | Shows each       |
+| Grid              | table       | agent_votes (JSON)        | agent's vote     |
++-------------------+-------------+---------------------------+------------------+
+| Consensus         | Above       | Calculated from votes     | Shows final      |
+| Decision Bar      | grid        |                           | decision         |
++-------------------+-------------+---------------------------+------------------+
+| System Status     | Bottom      | Hardcoded/placeholder     | Quick system     |
+| Panel             |             |                           | health           |
++-------------------+-------------+---------------------------+------------------+
+| Footer            | Very        | System clock              | Timestamp        |
+|                   | bottom      |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+
+--------------------------------------------------------------------------------
+HOW EACH COMPONENT WORKS:
+--------------------------------------------------------------------------------
+
+HEADER BAR:
+  Displays: [SOLAT_TERMINAL_v1.0], SYSTEM: [ONLINE], LATENCY, AGENTS: 6/6,
+  MODE: [PAPER], timestamp
+
+SIDEBAR - COMMAND CENTER:
+  Contains system status, filter checkboxes, signal legend, hard constraints
+
+SIDEBAR - FILTERS:
+  - "Show only [ACTIVE] assets" checkbox
+  - "Show only [BUY]/[SELL] signals" checkbox
+
+SIDEBAR - SIGNAL LEGEND:
+  Explains BUY/SELL/HOLD signals, ACTIVE/NORMAL/DORMANT status, agent badges
+
+SIDEBAR - HARD CONSTRAINTS:
+  Shows MAX_OPEN_TRADES: 5, MAX_POSITION_SIZE: 10%, RISK_PER_TRADE: 2%,
+  CONSENSUS_THRESHOLD: 0.60
+
+MARKET SURVEILLANCE TABLE:
+  Query: latest snapshot per symbol
+  Columns: SYMBOL, PRICE, REGIME, CONSENSUS, SIGNAL, NEWS
+
+COUNCIL OF 6 GRID:
+  6-column grid displaying: REGIME, STRATEGY, SNIPER, NEWS, SEASONALITY,
+  INSTITUTIONAL with vote values (-1.0 to +1.0)
+
+CONSENSUS DECISION BAR:
+  Calculates average vote -> outputs STRONG_BUY/BUY/HOLD/SELL/STRONG_SELL
+  with confidence %
+
+SYSTEM STATUS PANEL:
+  5 metrics: SYSTEM_STATUS, OPEN_TRADES, RISK_USAGE, WIN_RATE, AGENTS_ONLINE
+
+FOOTER:
+  Shows: SOLAT_TERMINAL | CONSENSUS_VOTING_V1.0 | WAL_MODE_ENABLED |
+  UPDATED: timestamp
+
+--------------------------------------------------------------------------------
+DATA FLOW (MAIN PAGE):
+--------------------------------------------------------------------------------
+
+    SQLite DB (market_snapshots table)
+            |
+            v
+    SQL Query: SELECT symbol, close_price, regime, consensus_score,
+               signal, news_sentiment, order_imbalance, agent_votes
+            |
+            v
+    pandas DataFrame
+            |
+            v
+    Deduplicate (latest per symbol)
+            |
+            v
+    Apply filters (active only, signals only)
+            |
+            v
+    render_surveillance_table() -> Streamlit dataframe
+            |
+            v
+    Parse agent_votes JSON -> render_council_grid()
+
+================================================================================
+               3. PAGE 2: COUNCIL WAR ROOM (pages/council_war_room.py)
+================================================================================
+
+URL: http://localhost:8501/council_war_room
+
+Purpose: Deep-dive visualization of the Council of 6 voting system
+
+--------------------------------------------------------------------------------
+COMPONENTS ON THIS PAGE:
+--------------------------------------------------------------------------------
+
++-------------------+-------------+---------------------------+------------------+
+| Component         | Location    | Data Source               | Purpose          |
++-------------------+-------------+---------------------------+------------------+
+| Header            | Top         | Static                    | Page title       |
++-------------------+-------------+---------------------------+------------------+
+| Symbol Card       | Top row,    | market_snapshots.symbol   | Current asset    |
+|                   | col 1       |                           | being analyzed   |
++-------------------+-------------+---------------------------+------------------+
+| Decision Card     | Top row,    | Calculated                | Trading decision |
+|                   | col 2       |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Confidence Card   | Top row,    | Calculated                | Signal strength  |
+|                   | col 3       |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Score Card        | Top row,    | market_snapshots.         | Numeric          |
+|                   | col 4       | consensus_score           | consensus        |
++-------------------+-------------+---------------------------+------------------+
+| Consensus Gauge   | Below       | Calculated                | ASCII            |
+|                   | cards       |                           | visualization    |
++-------------------+-------------+---------------------------+------------------+
+| Agent Vote Bars   | Main area   | market_snapshots.*_vote   | Individual       |
+|                   |             | columns                   | agent votes      |
++-------------------+-------------+---------------------------+------------------+
+| Agent Performance | Bottom      | ai_trust_scores table     | Agent accuracy   |
+| Table             |             |                           | stats            |
++-------------------+-------------+---------------------------+------------------+
+
+--------------------------------------------------------------------------------
+HOW EACH COMPONENT WORKS:
+--------------------------------------------------------------------------------
+
+HEADER:
+  "COUNCIL WAR ROOM - Real-time Consensus Voting System"
+
+SYMBOL CARD:
+  Displays symbol from latest snapshot
+
+DECISION CARD:
+  Logic:
+    score > 0.6  -> STRONG BUY
+    score > 0.2  -> BUY
+    score < -0.6 -> STRONG SELL
+    score < -0.2 -> SELL
+    else         -> HOLD
+
+CONFIDENCE CARD:
+  Logic:
+    abs(score) > 0.8 -> EXTREME
+    abs(score) > 0.6 -> HIGH
+    abs(score) > 0.4 -> MODERATE
+    else             -> LOW
+
+SCORE CARD:
+  Raw consensus score (-1.0 to +1.0) with color coding
+
+CONSENSUS GAUGE:
+  Creates ASCII bar visualization showing direction and magnitude
+  Example: [BUY >>>>>>>>>>>>>>>>>>>>] +0.78
+
+AGENT VOTE BARS:
+  6 rows, each with: agent name, progress bar (color-coded), weight percentage
+
+AGENT PERFORMANCE TABLE:
+  Columns: Agent, Weight, Win Rate, Correct, Wrong, Total
+
+--------------------------------------------------------------------------------
+DATA FLOW (WAR ROOM):
+--------------------------------------------------------------------------------
+
+    SQLite Query:
+      market_snapshots -> regime_vote, strategy_vote, sniper_vote,
+                         news_vote, seasonality_vote, institutional_vote
+            |
+            v
+      ai_trust_scores -> base_weight, correct_calls, wrong_calls, win_rate
+            |
+            v
+      Build votes_dict: {agent_name: vote_value}
+            |
+            v
+      render_consensus_gauge() -> ASCII bar
+            |
+            v
+      render_agent_vote_bar() -> Progress bars with colors:
+          vote > 0.3  -> Green (positive)
+          vote < -0.3 -> Red (negative)
+          else        -> Yellow (neutral)
+
+--------------------------------------------------------------------------------
+VOTE COLOR LOGIC:
+--------------------------------------------------------------------------------
+
+    Green (#00FF41):      vote > 0.5  (strongly bullish)
+    Light Green (#90EE90): vote > 0    (mildly bullish)
+    Yellow (#FFD700):      vote = 0    (neutral)
+    Light Red (#FF6B9D):   vote < 0    (mildly bearish)
+    Red (#FF0055):         vote < -0.5 (strongly bearish)
+
+================================================================================
+                4. PAGE 3: STRATEGY LAB (pages/strategy_lab.py)
+================================================================================
+
+URL: http://localhost:8501/strategy_lab
+
+Purpose: Strategy optimization, backtesting comparison, and hyperparameter
+         tuning results
+
+--------------------------------------------------------------------------------
+COMPONENTS ON THIS PAGE:
+--------------------------------------------------------------------------------
+
++---------------------+-------------+-------------------------+------------------+
+| Component           | Location    | Data Source             | Purpose          |
++---------------------+-------------+-------------------------+------------------+
+| Header              | Top         | Static                  | Page title       |
++---------------------+-------------+-------------------------+------------------+
+| Sidebar -           | Left        | User checkbox           | Demo/Live toggle |
+| Data Source         |             |                         |                  |
++---------------------+-------------+-------------------------+------------------+
+| Sidebar -           | Left        | User buttons            | Trigger          |
+| Actions             |             |                         | operations       |
++---------------------+-------------+-------------------------+------------------+
+| Sidebar -           | Left        | Static                  | Strategy         |
+| Strategy Info       |             |                         | reference        |
++---------------------+-------------+-------------------------+------------------+
+| Portfolio Risk      | Top main    | account_balance table   | Current account  |
+| Metrics             |             |                         | state            |
++---------------------+-------------+-------------------------+------------------+
+| Win Rate Potential  | Below       | golden_settings.json    | Standard vs      |
+| Chart               | metrics     |                         | Optimized        |
++---------------------+-------------+-------------------------+------------------+
+| Golden Settings     | Below       | golden_settings.json    | AI-optimized     |
+| Panel               | chart       |                         | parameters       |
++---------------------+-------------+-------------------------+------------------+
+| Strategy Heatmap    | Main area   | strategy_performance    | Win rate matrix  |
+|                     |             | table                   |                  |
++---------------------+-------------+-------------------------+------------------+
+| Sharpe Comparison   | Left        | strategy_performance    | Risk-adjusted    |
+| Chart               | column      | table                   | returns          |
++---------------------+-------------+-------------------------+------------------+
+| Drawdown Comparison | Right       | strategy_performance    | Risk exposure    |
+| Chart               | column      | table                   |                  |
++---------------------+-------------+-------------------------+------------------+
+| Optimal Strategies  | Below       | assets table            | Best strategy    |
+| Table               | charts      |                         | per asset        |
++---------------------+-------------+-------------------------+------------------+
+| Trading Halts       | Below       | trading_halts table     | Circuit breaker  |
+| Table               |             |                         | history          |
++---------------------+-------------+-------------------------+------------------+
+| Strategy Guide      | Bottom      | Static                  | Educational      |
+| Expander            |             |                         | content          |
++---------------------+-------------+-------------------------+------------------+
+
+--------------------------------------------------------------------------------
+HOW EACH COMPONENT WORKS:
+--------------------------------------------------------------------------------
+
+HEADER:
+  "SOLAT Strategy Lab - Multi-strategy optimization and performance analysis"
+
+SIDEBAR - DATA SOURCE:
+  "Use Demo Data" checkbox - switches between mock data and live DB
+
+SIDEBAR - ACTIONS:
+  - "Run Optimization" button
+  - "Run Hyperopt (AI)" button
+  - "Refresh Data" button
+
+SIDEBAR - STRATEGY INFO:
+  Lists: Standard (9/26/52), Aggressive (7/22/44), Conservative (12/30/60),
+  Mean Reversion
+
+PORTFOLIO RISK METRICS:
+  4 metrics: Portfolio Equity, Daily P&L (with % delta), Daily Drawdown,
+  Trading Status
+
+WIN RATE POTENTIAL CHART:
+  Grouped bar chart: Standard (50%) vs AI-Optimized win rate per asset,
+  with 65% target line
+
+GOLDEN SETTINGS PANEL:
+  Cards per asset showing: Parameters (T/K/S), Win Rate, Profit Factor,
+  badge (EXCELLENT/GOOD/MODERATE)
+
+STRATEGY HEATMAP:
+  Plotly imshow: rows=assets, cols=strategies, cells=win rate %, color-coded
+  (Red<45%, Yellow 45-55%, Green>55%)
+
+SHARPE COMPARISON CHART:
+  Bar chart: average Sharpe ratio by strategy
+
+DRAWDOWN COMPARISON CHART:
+  Bar chart: average max drawdown by strategy
+
+OPTIMAL STRATEGIES TABLE:
+  Dataframe: symbol, optimal_strategy, fitness_score, status
+
+TRADING HALTS TABLE:
+  Dataframe: reason, halt_start, halt_end, daily_drawdown, is_active
+
+STRATEGY GUIDE EXPANDER:
+  Explains all 4 strategy variations, optimization process, risk management
+
+--------------------------------------------------------------------------------
+DATA FLOW (STRATEGY LAB):
+--------------------------------------------------------------------------------
+
+    Sources:
+      1. golden_settings.json -> AI-optimized Ichimoku parameters
+      2. strategy_performance table -> win_rate, sharpe_ratio, max_drawdown
+         per (symbol, strategy)
+      3. assets table -> optimal_strategy assignment
+      4. account_balance table -> equity, daily_pnl, drawdown
+      5. trading_halts table -> circuit breaker events
+
+    Visualization Pipeline:
+      strategy_performance -> pivot(symbol x strategy) ->
+        create_strategy_heatmap() -> Plotly imshow
+
+      strategy_performance -> groupby(strategy).mean() ->
+        create_sharpe_comparison() -> Plotly bar
+
+      strategy_performance -> groupby(strategy).mean() ->
+        create_drawdown_comparison() -> Plotly bar
+
+      golden_settings -> render_win_rate_potential() -> Grouped bar chart
+
+      golden_settings -> render_golden_settings_panel() -> HTML cards
+
+--------------------------------------------------------------------------------
+HEATMAP COLOR SCALE:
+--------------------------------------------------------------------------------
+
+    Red (#ff6b6b):    Win rate < 45%
+    Yellow (#ffa94d): Win rate 45-55%
+    Green (#51cf66):  Win rate > 55%
+
+================================================================================
+                   5. PAGE 4: BACKTESTER (pages/backtest.py)
+================================================================================
+
+URL: http://localhost:8501/backtest
+
+Purpose: Run historical backtests on individual assets with custom parameters
+
+--------------------------------------------------------------------------------
+COMPONENTS ON THIS PAGE:
+--------------------------------------------------------------------------------
+
++-------------------+-------------+---------------------------+------------------+
+| Component         | Location    | Data Source               | Purpose          |
++-------------------+-------------+---------------------------+------------------+
+| Header            | Top         | Static                    | Page title       |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left        | User dropdown             | Choose asset     |
+| Asset Selection   |             |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left        | User date inputs          | Backtest range   |
+| Time Period       |             |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left        | User number input         | Starting balance |
+| Initial Capital   |             |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Run Backtest      | Main area   | User click                | Trigger backtest |
+| Button            |             |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Results Metrics   | After run   | Calculated                | Key performance  |
+|                   |             |                           | stats            |
++-------------------+-------------+---------------------------+------------------+
+| Equity Curve      | After run   | Simulated                 | Portfolio value  |
+| Chart             |             |                           | over time        |
++-------------------+-------------+---------------------------+------------------+
+| Trade History     | After run   | Simulated                 | Individual       |
+| Table             |             |                           | trades           |
++-------------------+-------------+---------------------------+------------------+
+| Analysis          | After run   | Calculated                | Performance      |
+| Expander          |             |                           | interpretation   |
++-------------------+-------------+---------------------------+------------------+
+
+--------------------------------------------------------------------------------
+HOW EACH COMPONENT WORKS:
+--------------------------------------------------------------------------------
+
+HEADER:
+  "SOLAT Backtester - Test Ichimoku strategy on historical data"
+
+SIDEBAR - ASSET SELECTION:
+  Options: BTC/USDT, ETH/USDT, AAPL, GC=F
+
+SIDEBAR - TIME PERIOD:
+  Start Date picker, End Date picker
+
+SIDEBAR - INITIAL CAPITAL:
+  Default $10,000, min $1,000, step $1,000
+
+RUN BACKTEST BUTTON:
+  Calls simulate_backtest_data() with parameters
+
+RESULTS METRICS:
+  4 metrics: Total Return %, Max Drawdown %, Sharpe Ratio, Win Rate %
+
+EQUITY CURVE CHART:
+  Plotly line chart with fill, showing equity progression
+
+TRADE HISTORY TABLE:
+  Dataframe: Date, Symbol, Side, Entry, Exit, P&L, Result (WIN/LOSS color-coded)
+
+ANALYSIS EXPANDER:
+  Explains: what returns mean, drawdown assessment, Sharpe interpretation,
+  recommendations
+
+--------------------------------------------------------------------------------
+DATA FLOW (BACKTESTER):
+--------------------------------------------------------------------------------
+
+    User Inputs:
+      symbol + start_date + end_date + initial_capital
+            |
+            v
+    simulate_backtest_data():
+      1. Generate date range
+      2. Simulate daily returns (normal distribution: mean=0.05%, std=1.5%)
+      3. Calculate equity curve: initial_capital x cumulative_returns
+      4. Calculate metrics:
+         - Total Return = (final - initial) / initial x 100
+         - Max Drawdown = min(equity - running_max) / running_max x 100
+         - Sharpe Ratio = (mean_returns / std_returns) x sqrt(252)
+      5. Generate sample trades (30% probability per day)
+            |
+            v
+    Render:
+      render_backtest_metrics() -> Streamlit metrics
+      render_equity_curve() -> Plotly line chart
+      render_trades_table() -> Styled dataframe (WIN=green, LOSS=red)
+
+--------------------------------------------------------------------------------
+OUTPUT INTERPRETATION:
+--------------------------------------------------------------------------------
+
+    Sharpe > 2.0:        Excellent risk-adjusted returns
+    Sharpe 1.0-2.0:      Good
+    Sharpe < 1.0:        Poor
+    Max Drawdown > -30%: High risk warning
+
+================================================================================
+                 6. PAGE 5: THE BRAIN - RAG (pages/brain_rag.py)
+================================================================================
+
+URL: http://localhost:8501/brain_rag
+
+Purpose: Natural language search through your PDF trading library using local AI
+
+--------------------------------------------------------------------------------
+COMPONENTS ON THIS PAGE:
+--------------------------------------------------------------------------------
+
++-------------------+-------------+---------------------------+------------------+
+| Component         | Location    | Data Source               | Purpose          |
++-------------------+-------------+---------------------------+------------------+
+| Header            | Top         | Static                    | Page title       |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left        | User buttons              | Index management |
+| Controls          |             |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left        | Filesystem scan           | Show indexed     |
+| Available PDFs    |             |                           | docs             |
++-------------------+-------------+---------------------------+------------------+
+| Sidebar -         | Left        | LocalKnowledgeBrain.      | Index info       |
+| Index Stats       |             | get_stats()               |                  |
++-------------------+-------------+---------------------------+------------------+
+| How It Works      | Top main    | Static                    | User guide       |
++-------------------+-------------+---------------------------+------------------+
+| Search Input      | Main area   | User text                 | Query entry      |
++-------------------+-------------+---------------------------+------------------+
+| Search Button     | Next to     | User click                | Trigger search   |
+|                   | input       |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Results Tabs      | After       | FAISS search              | Top 3 matches    |
+|                   | search      |                           |                  |
++-------------------+-------------+---------------------------+------------------+
+| Search History    | Bottom      | Session state             | Recent queries   |
++-------------------+-------------+---------------------------+------------------+
+| Help Expander     | Bottom      | Static                    | Setup guide      |
++-------------------+-------------+---------------------------+------------------+
+
+--------------------------------------------------------------------------------
+HOW EACH COMPONENT WORKS:
+--------------------------------------------------------------------------------
+
+HEADER:
+  "The Brain - Your Personal Quant Library"
+
+SIDEBAR - CONTROLS:
+  - "Rebuild Index" button (re-processes all PDFs)
+  - "Refresh" button
+
+SIDEBAR - AVAILABLE PDFS:
+  Lists all *.pdf files in data/knowledge_base/
+
+SIDEBAR - INDEX STATS:
+  Shows: Documents Indexed count, Embedding Model name, Cache directory
+
+HOW IT WORKS:
+  4-step explanation of adding PDFs and searching
+
+SEARCH INPUT:
+  Text input: "Ask your library a question..."
+
+SEARCH BUTTON:
+  Calls brain.answer_question(query, k=3)
+
+RESULTS TABS:
+  Tab per result, each showing: Relevance %, Source file, Chunk ID,
+  Excerpt text
+
+SEARCH HISTORY:
+  Collapsible list of last 10 searches with doc counts
+
+HELP EXPANDER:
+  Detailed instructions: setup, searching tips, technical details
+
+--------------------------------------------------------------------------------
+DATA FLOW (RAG):
+--------------------------------------------------------------------------------
+
+    Setup (on page load):
+      LocalKnowledgeBrain(pdf_directory="data/knowledge_base",
+                          cache_dir="data/cache/brain",
+                          embedding_model="all-MiniLM-L6-v2")
+            |
+            v
+      PDFDocumentLoader -> chunks text (500 chars, 100 overlap)
+            |
+            v
+      sentence-transformers -> generates embeddings
+            |
+            v
+      FAISS -> stores vectors locally
+
+    Search Flow:
+      User query -> brain.answer_question(query, k=3)
+            |
+            v
+      sentence-transformers -> embed query
+            |
+            v
+      FAISS -> L2 similarity search -> top 3 chunks
+            |
+            v
+      Return: [{"text", "source", "relevance", "chunk_id", "char_count"}, ...]
+            |
+            v
+      Display in tabs with metrics
+
+--------------------------------------------------------------------------------
+TECHNICAL SPECS:
+--------------------------------------------------------------------------------
+
+    Embedding Model:     all-MiniLM-L6-v2 (384 dimensions, 80MB)
+    Vector Store:        FAISS (Facebook AI Similarity Search)
+    Chunk Size:          500 characters
+    Chunk Overlap:       100 characters
+    Results Per Query:   3 most relevant
+    100% Offline:        No API calls, runs entirely locally
+
+================================================================================
+                  7. PAGE 6: WAR ROOM MAIN (war_room_main.py)
+================================================================================
+
+URL: Can be run standalone or integrated
+
+Purpose: Alternative multi-page dashboard with 4 internal tabs
+
+--------------------------------------------------------------------------------
+TABS IN THIS PAGE:
+--------------------------------------------------------------------------------
+
++-------------------+-------------------+----------------------------------------+
+| Tab               | Purpose           | Components                             |
++-------------------+-------------------+----------------------------------------+
+| MISSION CONTROL   | System overview   | 4 metrics (Active Assets, Win Rate,    |
+|                   |                   | Consensus Avg, Trades Today), System   |
+|                   |                   | Health code block, Recent Decisions    |
+|                   |                   | table                                  |
++-------------------+-------------------+----------------------------------------+
+| WAR ROOM          | Consensus voting  | 4 tactical cards (Symbol, Decision,    |
+|                   |                   | Confidence, Score), 6 agent vote bars  |
+|                   |                   | with progress visualization            |
++-------------------+-------------------+----------------------------------------+
+| SURVEILLANCE      | Market monitoring | Market data table (Symbol, Price,      |
+|                   |                   | Change, Regime, Signal, Confidence),   |
+|                   |                   | Technical Analysis line chart          |
++-------------------+-------------------+----------------------------------------+
+| SYSTEMS           | Configuration     | Consensus Parameters display, Console  |
+|                   |                   | Log code block                         |
++-------------------+-------------------+----------------------------------------+
+
+================================================================================
+                       8. SHARED COMPONENTS (views.py)
+================================================================================
+
+These functions are imported and reused across pages:
+
++---------------------------+----------------------------+----------------------+
+| Function                  | Purpose                    | Output               |
++---------------------------+----------------------------+----------------------+
+| load_terminal_css()       | Inject Bloomberg-style CSS | Matrix green         |
+|                           |                            | monospace theme      |
++---------------------------+----------------------------+----------------------+
+| render_header()           | System status bar          | [SOLAT_TERMINAL_v1.0]|
+|                           |                            | header with timestamp|
++---------------------------+----------------------------+----------------------+
+| render_sidebar()          | Left panel with controls   | Returns filter states|
+|                           |                            | (show_active,        |
+|                           |                            | show_signals)        |
++---------------------------+----------------------------+----------------------+
+| render_council_grid       | 6-column agent display     | Agent name, vote     |
+| (votes, reasons)          |                            | value, reasoning     |
++---------------------------+----------------------------+----------------------+
+| render_surveillance_table | Market data table          | SYMBOL, PRICE,       |
+| (df)                      |                            | REGIME, CONSENSUS,   |
+|                           |                            | SIGNAL, NEWS         |
++---------------------------+----------------------------+----------------------+
+| render_system_status()    | 5-metric health panel      | Status, trades, risk,|
+|                           |                            | win rate, agents     |
++---------------------------+----------------------------+----------------------+
+| render_traffic_light      | Regime indicator           | Large BULL/BEAR/CHOP |
+| _header(regime)           |                            | badge                |
++---------------------------+----------------------------+----------------------+
+| render_agent_stats(stats) | Trust scores table         | Agent, Weight, Win   |
+|                           |                            | Rate, Record, Status |
++---------------------------+----------------------------+----------------------+
+| render_footer()           | Timestamp footer           | Version and update   |
+|                           |                            | time                 |
++---------------------------+----------------------------+----------------------+
+
+================================================================================
+                       9. SHARED COMPONENTS (charts.py)
+================================================================================
+
++---------------------------+----------------------------+----------------------+
+| Function                  | Purpose                    | Output               |
++---------------------------+----------------------------+----------------------+
+| render_ichimoku_chart     | Full Ichimoku              | Candlesticks +       |
+| (df, symbol)              | visualization              | Tenkan (blue) +      |
+|                           |                            | Kijun (red) +        |
+|                           |                            | Cloud (green/red     |
+|                           |                            | fill) + Chikou       |
+|                           |                            | (purple dashed) +    |
+|                           |                            | Regime background    |
+|                           |                            | shading              |
++---------------------------+----------------------------+----------------------+
+| render_fitness_bar_chart  | Top 5 assets by fitness    | Horizontal bar chart |
+| (data)                    |                            | with Viridis         |
+|                           |                            | colorscale           |
++---------------------------+----------------------------+----------------------+
+| render_status_pie_chart   | Asset status distribution  | Pie: active (green), |
+| (counts)                  |                            | normal (orange),     |
+|                           |                            | dormant (red)        |
++---------------------------+----------------------------+----------------------+
+
+--------------------------------------------------------------------------------
+ICHIMOKU CHART DETAILS:
+--------------------------------------------------------------------------------
+
+Chart Layers (bottom to top):
+  1. Regime background rectangles (Bull=green, Bear=red, Chop=grey @ 5% opacity)
+  2. Cloud fill between Senkou A and B (green if A>B, red if A<B @ 20% opacity)
+  3. Candlesticks (green up, red down)
+  4. Tenkan-sen line (blue, 9-period)
+  5. Kijun-sen line (red, 26-period)
+  6. Chikou Span (purple dashed, lagging 26 periods)
+
+================================================================================
+                          10. CSS THEME SUMMARY
+================================================================================
+
++---------------------+-----------+--------------------------------------------+
+| Variable            | Color     | Usage                                      |
++---------------------+-----------+--------------------------------------------+
+| --terminal-green    | #00FF41   | Primary text, positive values, borders     |
++---------------------+-----------+--------------------------------------------+
+| --terminal-bg       | #0E1117   | Main background                            |
++---------------------+-----------+--------------------------------------------+
+| --terminal-dark     | #1a1f2e   | Card backgrounds, secondary panels         |
++---------------------+-----------+--------------------------------------------+
+| --danger-neon       | #FF0055   | Negative values, sell signals, errors      |
++---------------------+-----------+--------------------------------------------+
+| --warning-neon      | #FFD700   | Neutral values, hold signals, caution      |
++---------------------+-----------+--------------------------------------------+
+| --secondary-neon    | #00D9FF   | Headers, labels, secondary highlights      |
++---------------------+-----------+--------------------------------------------+
+
+================================================================================
+                    11. DATABASE TABLES USED BY FRONTEND
+================================================================================
+
++----------------------+-------------------+------------------------------------+
+| Table                | Page(s)           | Columns Used                       |
++----------------------+-------------------+------------------------------------+
+| market_snapshots     | Main, War Room    | symbol, close_price, regime,       |
+|                      |                   | consensus_score, signal,           |
+|                      |                   | news_sentiment, agent_votes,       |
+|                      |                   | *_vote columns                     |
++----------------------+-------------------+------------------------------------+
+| ai_trust_scores      | War Room          | agent_name, base_weight,           |
+|                      |                   | correct_calls, wrong_calls,        |
+|                      |                   | win_rate                           |
++----------------------+-------------------+------------------------------------+
+| strategy_performance | Strategy Lab      | symbol, strategy_name, win_rate,   |
+|                      |                   | sharpe_ratio, max_drawdown,        |
+|                      |                   | profit_factor                      |
++----------------------+-------------------+------------------------------------+
+| assets               | Strategy Lab      | symbol, optimal_strategy,          |
+|                      |                   | fitness_score, status              |
++----------------------+-------------------+------------------------------------+
+| account_balance      | Strategy Lab      | balance, equity, daily_pnl,        |
+|                      |                   | daily_drawdown, is_halted          |
++----------------------+-------------------+------------------------------------+
+| trading_halts        | Strategy Lab      | reason, halt_start, halt_end,      |
+|                      |                   | daily_drawdown, is_active          |
++----------------------+-------------------+------------------------------------+
+
+================================================================================
+                               12. SUMMARY
+================================================================================
+
+The SOLAT dashboard provides 6 distinct views with 50+ individual components:
+
+    1. Main Terminal:     Real-time surveillance + Council voting summary
+    2. Council War Room:  Deep-dive into 6-agent consensus mechanics
+    3. Strategy Lab:      Optimization results + Golden Settings
+    4. Backtester:        Historical strategy testing
+    5. The Brain (RAG):   PDF knowledge search
+    6. War Room Main:     Alternative 4-tab command center
+
+All data flows from the SQLite database (WAL mode, read-only for dashboard)
+which is populated by the Sentinel backend process.
+
+--------------------------------------------------------------------------------
+ARCHITECTURE DIAGRAM:
+--------------------------------------------------------------------------------
+
+    +------------------+         +------------------+
+    |    SENTINEL      |         |    OBSERVER      |
+    |    (Backend)     |         |    (Frontend)    |
+    |                  |         |                  |
+    | - Data ingestion |         | - Streamlit UI   |
+    | - Strategy logic |         | - Visualizations |
+    | - Evolution      |   WAL   | - User controls  |
+    | - Consensus      | ======> | - Read-only DB   |
+    | - Trade exec     |  SQLite | - 30s refresh    |
+    |                  |         |                  |
+    +--------+---------+         +--------+---------+
+             |                            |
+             v                            v
+    +------------------+         +------------------+
+    |  trading_engine  |         |  Browser Window  |
+    |      .db         |         |  localhost:8501  |
+    +------------------+         +------------------+
+
+--------------------------------------------------------------------------------
+FILE STRUCTURE:
+--------------------------------------------------------------------------------
+
+    dashboard/
+    |-- app.py                    # Main terminal page (Page 1)
+    |-- views.py                  # Shared UI components
+    |-- charts.py                 # Shared chart functions
+    |-- war_room_main.py          # Alternative multi-tab interface (Page 6)
+    |-- __init__.py
+    |
+    +-- pages/
+        |-- council_war_room.py   # Council voting deep-dive (Page 2)
+        |-- strategy_lab.py       # Optimization & performance (Page 3)
+        |-- backtest.py           # Historical backtesting (Page 4)
+        |-- brain_rag.py          # PDF knowledge search (Page 5)
+
+--------------------------------------------------------------------------------
+END OF DOCUMENTATION
+--------------------------------------------------------------------------------
+
+Document generated for SOLAT Platform v2.0
+Last updated: January 2026
+
+================================================================================
