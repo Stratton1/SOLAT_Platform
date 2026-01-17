@@ -1,0 +1,971 @@
+================================================================================
+                    THE GAUNTLET - COMPLETE IMPLEMENTATION DOCUMENTATION
+                    Multi-Timeframe Strategy Optimization Engine for SOLAT
+================================================================================
+
+                              Document Version: 1.0
+                              Date: January 2026
+                              Author: Claude (Anthropic)
+
+================================================================================
+                              TABLE OF CONTENTS
+================================================================================
+
+1. Executive Summary
+2. What Was Built
+3. File-by-File Breakdown
+4. The IchimokuFibonacci Strategy
+5. The Gauntlet Optimization Engine
+6. Database Schema Updates
+7. Quant Lab Dashboard
+8. How Everything Works Together
+9. Usage Instructions
+10. Configuration Options
+11. Selection Criteria Explained
+12. Output and Results
+13. Integration with Live Sentinel
+14. Improvement Suggestions (15+)
+
+================================================================================
+                           1. EXECUTIVE SUMMARY
+================================================================================
+
+THE GAUNTLET is an automated multi-timeframe strategy optimization engine
+designed for high-frequency day trading. It systematically tests every asset
+in your portfolio across multiple timeframes to find the optimal configuration
+that delivers 2-4 trades per day with consistent profitability.
+
+KEY DELIVERABLES:
+-----------------
+- IchimokuFibonacci hybrid strategy combining trend + precision entries
+- Automated optimization loop testing 4 timeframes per asset
+- Database storage for optimal configurations
+- Interactive dashboard (Quant Lab) for running and viewing results
+- Test suite for validation
+
+TARGET METRICS:
+---------------
+- Trade Frequency: 2-5 trades per day (sweet spot: 3)
+- Profit Factor: > 1.3
+- Win Rate: > 45%
+- Risk/Reward: 1:1.5
+
+================================================================================
+                           2. WHAT WAS BUILT
+================================================================================
+
++----------------------------------+--------+----------------------------------+
+| Component                        | Lines  | Purpose                          |
++----------------------------------+--------+----------------------------------+
+| src/core/strategies.py           | 600+   | IchimokuFibonacci hybrid strategy|
+| src/core/optimizer_loop.py       | 550+   | The Gauntlet optimization engine |
+| src/database/repository.py       | +50    | New tables for optimization      |
+| dashboard/pages/backtest.py      | 700+   | Quant Lab UI with 2 tabs         |
+| test_gauntlet.py                 | 250+   | Validation test suite            |
++----------------------------------+--------+----------------------------------+
+| TOTAL NEW CODE                   | 2150+  | Complete optimization system     |
++----------------------------------+--------+----------------------------------+
+
+CAPABILITIES UNLOCKED:
+----------------------
+1. Automatically find best timeframe for each asset
+2. Test IchimokuFibonacci strategy across 5m, 15m, 30m, 1h
+3. Filter results by trade frequency, profit factor, win rate
+4. Store optimal settings in database for live trading
+5. Visualize optimization results in dashboard
+6. Run manual backtests on individual assets
+7. Compare performance across timeframes
+
+================================================================================
+                       3. FILE-BY-FILE BREAKDOWN
+================================================================================
+
+------------------------------------------------------------------------------
+FILE: src/core/strategies.py (600+ lines)
+------------------------------------------------------------------------------
+
+PURPOSE:
+  Implements the IchimokuFibonacci hybrid trading strategy that combines
+  Ichimoku Cloud for trend direction with Fibonacci retracements for
+  precise pullback entries.
+
+CLASSES:
+  - TrendDirection (Enum): BULLISH, BEARISH, NEUTRAL
+  - FibLevel (Enum): 0.236, 0.382, 0.500, 0.618, 0.786
+  - SwingPoint (dataclass): Represents swing high/low points
+  - FibonacciLevels (dataclass): All Fib levels from a swing
+  - IchimokuFibonacci (class): Main strategy implementation
+
+KEY METHODS:
+  _calculate_ichimoku(df)      -> Add Ichimoku indicators to DataFrame
+  _get_trend_direction(...)    -> Determine Bull/Bear/Neutral from cloud
+  _find_swing_points(df)       -> Locate recent swing high and swing low
+  _get_fib_levels(high, low)   -> Calculate Fibonacci retracement levels
+  _check_fib_bounce(df, fibs)  -> Detect bounce off 38.2% or 50% level
+  check_signal(df)             -> Main entry point: returns trading signal
+
+FACTORY FUNCTION:
+  get_ichimoku_fibonacci_strategy(timeframe, aggressive)
+    - Returns timeframe-optimized strategy instance
+    - Adjusts swing_lookback and fib_tolerance per timeframe
+
+------------------------------------------------------------------------------
+FILE: src/core/optimizer_loop.py (550+ lines)
+------------------------------------------------------------------------------
+
+PURPOSE:
+  The Gauntlet - Automated optimization loop that tests all assets
+  across multiple timeframes to find optimal configurations.
+
+CLASSES:
+  - OptimizationResult (dataclass): Results from single optimization run
+  - GauntletConfig (dataclass): Configuration for optimization parameters
+  - GauntletOptimizer (class): Main optimization engine
+
+KEY METHODS:
+  _load_assets_from_db()           -> Load assets from database or seed file
+  _fetch_high_granularity_data()   -> Get 5m data for backtesting
+  _resample_data(df, timeframe)    -> Convert 5m to 15m/30m/1h
+  _run_backtest(df, symbol, tf)    -> Execute strategy backtest
+  _validate_result(metrics)        -> Check if meets selection criteria
+  optimize_asset(symbol, source)   -> Test single asset across timeframes
+  run_mass_optimization()          -> THE GAUNTLET: Test all assets
+  save_winners_to_db(winners)      -> Persist optimal configs
+  get_leaderboard()                -> Retrieve results as DataFrame
+
+CLI INTERFACE:
+  python -m src.core.optimizer_loop
+    - Runs The Gauntlet from command line
+    - Prints progress and final leaderboard
+
+------------------------------------------------------------------------------
+FILE: src/database/repository.py (Modified +50 lines)
+------------------------------------------------------------------------------
+
+CHANGES MADE:
+
+1. ASSETS TABLE - Added columns:
+   - best_timeframe TEXT    : Optimal timeframe (e.g., "15m")
+   - best_strategy TEXT     : Strategy name (e.g., "ichimoku_fibonacci")
+   - opt_params TEXT        : JSON blob with full optimization details
+
+2. NEW TABLE - gauntlet_results:
+   - symbol, timeframe, strategy (composite key)
+   - trades_per_day, win_rate, profit_factor
+   - sharpe_ratio, max_drawdown, total_return
+   - avg_trade_duration, is_valid, parameters
+   - calculated_at timestamp
+
+3. NEW TABLE - strategy_performance:
+   - symbol, strategy_name (composite key)
+   - win_rate, sharpe_ratio, max_drawdown
+   - total_trades, profit_factor
+   - avg_win, avg_loss, is_optimal
+
+------------------------------------------------------------------------------
+FILE: dashboard/pages/backtest.py (700+ lines, rewritten)
+------------------------------------------------------------------------------
+
+PURPOSE:
+  Refactored from simple backtest page into full "Quant Lab" with
+  two tabs: The Gauntlet (global optimization) and Manual Inspector.
+
+TAB 1 - THE GAUNTLET:
+  Components:
+    - Header with neon styling
+    - "RUN GLOBAL OPTIMIZATION" button
+    - Progress bar with status text
+    - Optimization Leaderboard table
+    - Trade Frequency Analysis (box plot by timeframe)
+    - Win Rate vs Profit Factor scatter plot
+
+TAB 2 - MANUAL INSPECTOR:
+  Components:
+    - Sidebar: Asset selection, timeframe, date range, capital
+    - "Run Backtest" button
+    - Results metrics (Return, Drawdown, Sharpe, Win Rate)
+    - Equity curve chart
+    - Trade history table
+    - Analysis expander with recommendations
+
+------------------------------------------------------------------------------
+FILE: test_gauntlet.py (250+ lines)
+------------------------------------------------------------------------------
+
+PURPOSE:
+  Validation test suite for The Gauntlet implementation.
+
+TESTS:
+  1. test_ichimoku_fibonacci_strategy()
+     - Creates strategy instance
+     - Generates mock OHLCV data
+     - Tests signal generation
+     - Tests factory function
+
+  2. test_gauntlet_optimizer()
+     - Creates GauntletConfig
+     - Initializes GauntletOptimizer
+     - Tests asset loading
+
+  3. test_database_schema()
+     - Verifies new columns in assets table
+     - Checks gauntlet_results table exists
+     - Checks strategy_performance table exists
+
+  4. test_btc_optimization()
+     - Fetches live BTC/USDT data
+     - Runs quick optimization
+     - Reports trade frequency results
+
+================================================================================
+                    4. THE ICHIMOKUFIBONACCI STRATEGY
+================================================================================
+
+PHILOSOPHY:
+-----------
+Traditional Ichimoku is excellent for trend identification but often enters
+too late. Fibonacci retracements help catch pullbacks within trends for
+better entry prices. The combination:
+  - Ichimoku: "WHERE is the trend going?"
+  - Fibonacci: "WHEN should I enter?"
+
+SIGNAL LOGIC:
+-------------
+
+BULLISH ENTRY:
+  1. Price is ABOVE the Kumo (Cloud)
+  2. Cloud is GREEN (Senkou A > Senkou B)
+  3. Price pulls back to 38.2% or 50% Fibonacci level
+  4. Current candle closes ABOVE the Fib level (bounce confirmed)
+  -> Generate BUY signal
+
+BEARISH ENTRY:
+  1. Price is BELOW the Kumo (Cloud)
+  2. Cloud is RED (Senkou A < Senkou B)
+  3. Price rallies to 38.2% or 50% Fibonacci level
+  4. Current candle closes BELOW the Fib level (rejection confirmed)
+  -> Generate SELL signal
+
+EXIT STRATEGY:
+  - Take Profit: 1.5x the risk (entry to stop loss distance)
+  - Stop Loss: Below swing low (buys) / Above swing high (sells)
+  - Trailing Stop: Optionally trail on Kijun-sen (base line)
+
+TIMEFRAME PARAMETERS:
+---------------------
+| Timeframe | Tenkan | Kijun | Senkou B | Swing Lookback | Fib Tolerance |
+|-----------|--------|-------|----------|----------------|---------------|
+| 5m        | 7      | 22    | 44       | 30 bars        | 0.3%          |
+| 15m       | 9      | 26    | 52       | 24 bars        | 0.4%          |
+| 30m       | 9      | 26    | 52       | 20 bars        | 0.5%          |
+| 1h        | 9      | 26    | 52       | 16 bars        | 0.6%          |
+
+WHY THESE ADJUSTMENTS:
+  - Shorter timeframes need more lookback for swing detection
+  - Tighter tolerances on fast timeframes (less noise tolerance)
+  - Standard Ichimoku periods (9/26/52) work best on 15m+
+
+================================================================================
+                    5. THE GAUNTLET OPTIMIZATION ENGINE
+================================================================================
+
+OVERVIEW:
+---------
+The Gauntlet is a systematic optimization loop that:
+  1. Loads all tradeable assets
+  2. For each asset, tests multiple timeframe configurations
+  3. Runs backtests with the IchimokuFibonacci strategy
+  4. Validates results against selection criteria
+  5. Saves the winning configuration for live trading
+
+OPTIMIZATION FLOW:
+------------------
+
+    +-----------------+
+    | Load Assets     |
+    | (DB or Seed)    |
+    +--------+--------+
+             |
+             v
+    +--------+--------+     +-------------------+
+    | For Each Asset  +---->| Fetch 30 Days     |
+    | (BTC, ETH, ...) |     | of 5m Data        |
+    +--------+--------+     +--------+----------+
+             |                       |
+             v                       v
+    +--------+--------+     +--------+----------+
+    | For Each TF     +---->| Resample to       |
+    | (5m,15m,30m,1h) |     | Target Timeframe  |
+    +--------+--------+     +--------+----------+
+             |                       |
+             v                       v
+    +--------+--------+     +--------+----------+
+    | Run Backtest    +---->| Calculate         |
+    | IchimokuFib     |     | Metrics           |
+    +--------+--------+     +--------+----------+
+             |                       |
+             v                       v
+    +--------+--------+     +--------+----------+
+    | Validate        +---->| 2-5 trades/day?   |
+    | Criteria        |     | PF > 1.3?         |
+    |                 |     | WR > 45%?         |
+    +--------+--------+     +--------+----------+
+             |                       |
+             |      +-------+        |
+             +----->| Score |<-------+
+                    | Best  |
+                    +---+---+
+                        |
+                        v
+                +-------+-------+
+                | Save Winner   |
+                | to Database   |
+                +---------------+
+
+SCORING ALGORITHM:
+------------------
+When multiple timeframes pass validation, we score them:
+
+    score = (PF_score * 0.4) + (WR_score * 0.4) + (FREQ_score * 0.2)
+
+Where:
+  - PF_score = min(profit_factor, 3.0) / 3.0
+  - WR_score = win_rate (0.0 to 1.0)
+  - FREQ_score = 1.0 - abs(trades_per_day - 3.0) / 5.0
+
+This prioritizes:
+  1. High profit factor (capped at 3.0 to avoid outliers)
+  2. High win rate
+  3. Trade frequency close to 3/day (middle of 2-4 target)
+
+================================================================================
+                       6. DATABASE SCHEMA UPDATES
+================================================================================
+
+ASSETS TABLE (Extended):
+------------------------
++------------------+----------+------------------------------------------+
+| Column           | Type     | Description                              |
++------------------+----------+------------------------------------------+
+| symbol           | TEXT PK  | Asset symbol (e.g., "BTC/USDT")          |
+| source           | TEXT     | Data source (ccxt, yfinance, ig)         |
+| status           | TEXT     | active/normal/dormant                    |
+| fitness_score    | REAL     | Evolutionary fitness (0-1)               |
+| last_scan        | DATETIME | Last analysis timestamp                  |
+| optimal_strategy | TEXT     | Current best strategy name               |
+| best_timeframe   | TEXT     | NEW: Gauntlet-selected timeframe         |
+| best_strategy    | TEXT     | NEW: Gauntlet-selected strategy          |
+| opt_params       | TEXT     | NEW: JSON with full optimization details |
+| last_updated     | DATETIME | Last modification timestamp              |
+| meta_data        | TEXT     | Additional JSON metadata                 |
++------------------+----------+------------------------------------------+
+
+GAUNTLET_RESULTS TABLE (New):
+-----------------------------
++--------------------+----------+------------------------------------------+
+| Column             | Type     | Description                              |
++--------------------+----------+------------------------------------------+
+| id                 | INTEGER  | Auto-increment primary key               |
+| symbol             | TEXT     | Asset symbol                             |
+| timeframe          | TEXT     | Tested timeframe (5m, 15m, 30m, 1h)      |
+| strategy           | TEXT     | Strategy name                            |
+| trades_per_day     | REAL     | Average trades per day                   |
+| win_rate           | REAL     | Win rate (0.0-1.0)                       |
+| profit_factor      | REAL     | Gross profit / gross loss                |
+| sharpe_ratio       | REAL     | Risk-adjusted return                     |
+| max_drawdown       | REAL     | Maximum peak-to-trough decline           |
+| total_return       | REAL     | Total percentage return                  |
+| avg_trade_duration | REAL     | Average trade duration in minutes        |
+| is_valid           | INTEGER  | 1 if passed criteria, 0 otherwise        |
+| parameters         | TEXT     | JSON strategy parameters                 |
+| calculated_at      | DATETIME | Optimization timestamp                   |
++--------------------+----------+------------------------------------------+
+UNIQUE(symbol, timeframe, strategy)
+
+STRATEGY_PERFORMANCE TABLE (New):
+---------------------------------
++------------------+----------+------------------------------------------+
+| Column           | Type     | Description                              |
++------------------+----------+------------------------------------------+
+| id               | INTEGER  | Auto-increment primary key               |
+| symbol           | TEXT     | Asset symbol                             |
+| strategy_name    | TEXT     | Strategy identifier                      |
+| win_rate         | REAL     | Historical win rate                      |
+| sharpe_ratio     | REAL     | Risk-adjusted return                     |
+| max_drawdown     | REAL     | Maximum drawdown observed                |
+| total_trades     | INTEGER  | Number of trades in backtest             |
+| profit_factor    | REAL     | Profit factor                            |
+| avg_win          | REAL     | Average winning trade size               |
+| avg_loss         | REAL     | Average losing trade size                |
+| is_optimal       | INTEGER  | 1 if currently optimal for asset         |
+| calculated_at    | DATETIME | Calculation timestamp                    |
++------------------+----------+------------------------------------------+
+UNIQUE(symbol, strategy_name)
+
+================================================================================
+                        7. QUANT LAB DASHBOARD
+================================================================================
+
+OVERVIEW:
+---------
+The backtest.py page was completely refactored into a "Quant Lab" with
+two distinct functional tabs.
+
+TAB 1: THE GAUNTLET
+-------------------
+Purpose: Run and view global optimization results
+
+Layout:
++----------------------------------------------------------------------+
+|                    THE GAUNTLET                                       |
+|        Multi-Timeframe Strategy Optimization Engine                   |
++----------------------------------------------------------------------+
+| [RUN GLOBAL OPTIMIZATION] [Refresh Results] | Info Box               |
++----------------------------------------------------------------------+
+| Progress: Testing BTC/USDT (ccxt) [3/10]...                          |
+| [=========>                                          ] 30%            |
++----------------------------------------------------------------------+
+| OPTIMIZATION LEADERBOARD                                              |
+| +--------+--------+---------+------------+--------+--------+--------+|
+| | Symbol | Best TF| Win Rate| Trades/Day | PF     | Sharpe | Status ||
+| +--------+--------+---------+------------+--------+--------+--------+|
+| | BTC    | 15m    | 52.3%   | 3.2        | 1.45   | 1.23   | PASS   ||
+| | ETH    | 30m    | 48.1%   | 2.8        | 1.38   | 0.98   | PASS   ||
+| | SOL    | 1h     | 41.2%   | 1.5        | 1.12   | 0.65   | FAIL   ||
++----------------------------------------------------------------------+
+| TRADE FREQUENCY ANALYSIS                                              |
+| +---------------------------+  +----------------------------------+   |
+| | Box Plot: Trades/Day     |  | Scatter: Win Rate vs Profit Factor|  |
+| | by Timeframe             |  | Color: Valid/Invalid              |  |
+| +---------------------------+  +----------------------------------+   |
++----------------------------------------------------------------------+
+
+TAB 2: MANUAL INSPECTOR
+-----------------------
+Purpose: Run individual backtests with custom parameters
+
+Sidebar Controls:
+  - Asset Selection (dropdown)
+  - Timeframe (5m, 15m, 30m, 1h, 4h)
+  - Start Date / End Date
+  - Initial Capital
+  - Strategy Selection
+
+Main Content:
++----------------------------------------------------------------------+
+| Testing: BTC/USDT on 15m using ichimoku_fibonacci                     |
+| Period: 2025-12-17 to 2026-01-17 | Initial Capital: $10,000           |
++----------------------------------------------------------------------+
+| [RUN BACKTEST]                                                        |
++----------------------------------------------------------------------+
+| RESULTS                                                               |
+| +------------+ +------------+ +------------+ +------------+           |
+| | Return     | | Max DD     | | Sharpe     | | Win Rate   |           |
+| | +12.34%    | | -8.21%     | | 1.45       | | 54.2%      |           |
+| +------------+ +------------+ +------------+ +------------+           |
++----------------------------------------------------------------------+
+| EQUITY CURVE                                                          |
+| [Chart: Line graph showing portfolio value over time]                 |
++----------------------------------------------------------------------+
+| TRADE HISTORY                                                         |
+| +------+--------+------+--------+--------+--------+--------+          |
+| | Date | Symbol | Side | Entry  | Exit   | P&L    | Result |          |
+| +------+--------+------+--------+--------+--------+--------+          |
+| | 1/15 | BTC    | BUY  | $42,100| $42,850| +$750  | WIN    |          |
++----------------------------------------------------------------------+
+
+================================================================================
+                   8. HOW EVERYTHING WORKS TOGETHER
+================================================================================
+
+SYSTEM ARCHITECTURE:
+--------------------
+
+    +------------------+          +------------------+
+    |  ASSETS SEED     |          |   MARKET DATA    |
+    |  (JSON file)     |          |   ADAPTERS       |
+    +--------+---------+          +--------+---------+
+             |                             |
+             v                             v
+    +--------+---------+          +--------+---------+
+    |    DATABASE      |<-------->|  THE GAUNTLET    |
+    | - assets         |          | (optimizer_loop) |
+    | - gauntlet_results          +--------+---------+
+    | - strategy_perf  |                   |
+    +--------+---------+                   |
+             ^                             v
+             |                    +--------+---------+
+             |                    | ICHIMOKUFIB      |
+             |                    | STRATEGY         |
+             |                    | (strategies.py)  |
+             |                    +--------+---------+
+             |                             |
+             v                             v
+    +--------+---------+          +--------+---------+
+    |   QUANT LAB      |          |  LIVE SENTINEL   |
+    |   DASHBOARD      |          | (uses optimal    |
+    | (backtest.py)    |          |  configs)        |
+    +------------------+          +------------------+
+
+DATA FLOW:
+----------
+1. User clicks "RUN GLOBAL OPTIMIZATION" in Quant Lab
+2. GauntletOptimizer loads assets from database
+3. For each asset:
+   a. Fetch 30 days of 5-minute data from adapter
+   b. Resample to each target timeframe
+   c. Run IchimokuFibonacci backtest
+   d. Validate against criteria
+   e. Score valid results
+4. Save winning configurations to gauntlet_results
+5. Update assets table with best_timeframe and best_strategy
+6. Display leaderboard in dashboard
+7. Live Sentinel reads optimal config for each asset
+
+================================================================================
+                       9. USAGE INSTRUCTIONS
+================================================================================
+
+PREREQUISITES:
+--------------
+pip install pandas numpy pandas_ta streamlit plotly ccxt yfinance
+
+METHOD 1: Via Dashboard (Recommended)
+-------------------------------------
+1. Start the dashboard:
+   streamlit run run_dashboard.py
+
+2. Navigate to "Quant Lab" page (or backtest.py)
+
+3. Click "RUN GLOBAL OPTIMIZATION" button
+
+4. Watch progress bar and status updates
+
+5. View results in Optimization Leaderboard
+
+6. Use Manual Inspector tab for individual testing
+
+METHOD 2: Via Command Line
+--------------------------
+# Run The Gauntlet directly
+python -m src.core.optimizer_loop
+
+# Or
+python src/core/optimizer_loop.py
+
+METHOD 3: Programmatic
+----------------------
+from src.core.optimizer_loop import GauntletOptimizer, GauntletConfig
+
+# Configure
+config = GauntletConfig(
+    timeframes=["5m", "15m", "30m", "1h"],
+    min_trades_per_day=2.0,
+    max_trades_per_day=8.0,
+    min_profit_factor=1.3,
+    min_win_rate=0.45,
+    backtest_days=30,
+)
+
+# Run
+gauntlet = GauntletOptimizer(config)
+winners = gauntlet.run_mass_optimization()
+
+# Save
+gauntlet.save_winners_to_db(winners)
+
+# View leaderboard
+print(gauntlet.get_leaderboard())
+
+================================================================================
+                      10. CONFIGURATION OPTIONS
+================================================================================
+
+GAUNTLETCONFIG PARAMETERS:
+--------------------------
+
++--------------------+----------+---------+-----------------------------------+
+| Parameter          | Type     | Default | Description                       |
++--------------------+----------+---------+-----------------------------------+
+| timeframes         | List[str]| [5m,15m,| Timeframes to test                |
+|                    |          | 30m,1h] |                                   |
+| min_trades_per_day | float    | 2.0     | Minimum trades/day to pass        |
+| max_trades_per_day | float    | 8.0     | Maximum trades/day to pass        |
+| min_profit_factor  | float    | 1.3     | Minimum profit factor to pass     |
+| min_win_rate       | float    | 0.45    | Minimum win rate (45%) to pass    |
+| backtest_days      | int      | 30      | Days of history to backtest       |
+| initial_capital    | float    | 10000.0 | Starting capital for backtests    |
++--------------------+----------+---------+-----------------------------------+
+
+ICHIMOKUFIBONACCI PARAMETERS:
+-----------------------------
+
++------------------+----------+---------+--------------------------------------+
+| Parameter        | Type     | Default | Description                          |
++------------------+----------+---------+--------------------------------------+
+| tenkan_period    | int      | 9       | Tenkan-sen (conversion line) period  |
+| kijun_period     | int      | 26      | Kijun-sen (base line) period         |
+| senkou_b_period  | int      | 52      | Senkou Span B period                 |
+| swing_lookback   | int      | 20      | Bars to search for swing points      |
+| fib_tolerance    | float    | 0.005   | Tolerance around Fib levels (0.5%)   |
+| min_swing_size   | float    | 0.005   | Min swing size as % of price (0.5%)  |
+| risk_reward_ratio| float    | 1.5     | Take profit = 1.5x stop loss         |
++------------------+----------+---------+--------------------------------------+
+
+================================================================================
+                    11. SELECTION CRITERIA EXPLAINED
+================================================================================
+
+CRITERION 1: Trade Frequency (2-5 trades/day)
+---------------------------------------------
+WHY: Day trading requires sufficient opportunities without overtrading.
+  - < 2 trades/day: Too few opportunities, may miss market moves
+  - > 8 trades/day: Overtrading, higher transaction costs, noise
+
+HOW CALCULATED:
+  trades_per_day = total_trades / backtest_days
+
+HARD LIMITS:
+  - Reject if < 60 total trades (approx 2/day for 30 days)
+  - Reject if > 8 trades/day average
+
+CRITERION 2: Profit Factor (> 1.3)
+----------------------------------
+WHY: Profit Factor measures profitability efficiency.
+  - PF = 1.0: Break-even
+  - PF = 1.3: For every $1 lost, you make $1.30
+  - PF > 2.0: Excellent
+
+HOW CALCULATED:
+  profit_factor = sum(winning_trades) / abs(sum(losing_trades))
+
+WHY 1.3 THRESHOLD:
+  - Accounts for transaction costs (~0.1% per trade)
+  - Provides safety margin for slippage
+  - Historically sustainable over time
+
+CRITERION 3: Win Rate (> 45%)
+-----------------------------
+WHY: Minimum win rate ensures psychological sustainability.
+  - < 40%: Very difficult mentally, long losing streaks
+  - 45-55%: Comfortable range for trend-following
+  - > 60%: Excellent but harder to achieve
+
+COMBINED EFFECT:
+  PF 1.3 + WR 45% means:
+  - Average win is ~1.8x average loss
+  - 45 wins, 55 losses per 100 trades
+  - Net positive with healthy margin
+
+================================================================================
+                        12. OUTPUT AND RESULTS
+================================================================================
+
+CONSOLE OUTPUT (CLI):
+---------------------
+======================================================================
+  THE GAUNTLET - SOLAT Multi-Timeframe Optimizer
+======================================================================
+
+--- Optimizing BTC/USDT (ccxt) [1/10] ---
+  BTC/USDT 5m:  Trades/day=6.2, WR=48.3%, PF=1.21, Valid=False
+  BTC/USDT 15m: Trades/day=3.4, WR=52.1%, PF=1.45, Valid=True
+  BTC/USDT 30m: Trades/day=2.1, WR=49.8%, PF=1.38, Valid=True
+  BTC/USDT 1h:  Trades/day=1.2, WR=55.2%, PF=1.52, Valid=False
+  WINNER: 15m | Trades/day=3.4, WR=52.1%, PF=1.45
+
+--- Optimizing ETH/USDT (ccxt) [2/10] ---
+...
+
+======================================================================
+GAUNTLET COMPLETE: 7/10 assets optimized
+======================================================================
+
+OPTIMIZATION LEADERBOARD
+------------------------------------------------------------
+  BTC/USDT             | 15m  | WR=52.1% | PF=1.45 | Trades/Day=3.4
+  ETH/USDT             | 30m  | WR=48.7% | PF=1.38 | Trades/Day=2.8
+  ...
+
+DATABASE OUTPUT:
+----------------
+assets table updated with:
+  - best_timeframe = "15m"
+  - best_strategy = "ichimoku_fibonacci"
+  - opt_params = {"trades_per_day": 3.4, "win_rate": 0.521, ...}
+
+gauntlet_results table populated with all test results
+
+DASHBOARD OUTPUT:
+-----------------
+  - Leaderboard table with all tested combinations
+  - Box plot showing trade frequency distribution
+  - Scatter plot of Win Rate vs Profit Factor
+  - Status badges (PASS/FAIL) for quick filtering
+
+================================================================================
+                    13. INTEGRATION WITH LIVE SENTINEL
+================================================================================
+
+HOW SENTINEL USES GAUNTLET RESULTS:
+-----------------------------------
+After running The Gauntlet, the live trading Sentinel can:
+
+1. LOAD OPTIMAL CONFIG:
+   ```python
+   cursor.execute("""
+       SELECT best_timeframe, best_strategy, opt_params
+       FROM assets WHERE symbol = ?
+   """, (symbol,))
+   ```
+
+2. CREATE CORRECT STRATEGY:
+   ```python
+   from src.core.strategies import get_ichimoku_fibonacci_strategy
+
+   strategy = get_ichimoku_fibonacci_strategy(
+       timeframe=asset['best_timeframe']
+   )
+   ```
+
+3. FETCH DATA AT CORRECT TIMEFRAME:
+   ```python
+   df = adapter.get_ohlcv(
+       symbol,
+       timeframe=asset['best_timeframe'],
+       limit=100
+   )
+   ```
+
+4. GENERATE SIGNALS:
+   ```python
+   signal = strategy.check_signal(df)
+   if signal['signal'] == 'BUY':
+       execute_trade(...)
+   ```
+
+RECOMMENDED WORKFLOW:
+---------------------
+1. Run Gauntlet weekly (or after significant market changes)
+2. Review leaderboard for any assets that no longer pass
+3. Adjust criteria if market conditions shift
+4. Sentinel automatically uses latest optimal configs
+
+================================================================================
+                    14. IMPROVEMENT SUGGESTIONS (15+)
+================================================================================
+
+The following are recommended enhancements to make The Gauntlet even more
+powerful and production-ready:
+
+------------------------------------------------------------------------------
+STRATEGY IMPROVEMENTS
+------------------------------------------------------------------------------
+
+1. WALK-FORWARD OPTIMIZATION
+   Problem: Current backtest uses all data, risking overfitting.
+   Solution: Implement walk-forward analysis:
+     - Train on 70% of data
+     - Test on remaining 30%
+     - Roll forward and repeat
+     - Only accept strategies that perform consistently OOS
+
+2. MULTI-STRATEGY SUPPORT
+   Problem: Only tests IchimokuFibonacci.
+   Solution: Add strategy registry with multiple strategies:
+     - IchimokuStandard (trend following)
+     - IchimokuFibonacci (current)
+     - MeanReversion (counter-trend)
+     - Breakout (volatility expansion)
+   Let Gauntlet find best strategy AND timeframe per asset.
+
+3. DYNAMIC FIBONACCI LEVELS
+   Problem: Fixed Fib levels (38.2%, 50%) may not suit all assets.
+   Solution: Test multiple Fib combinations:
+     - Conservative: 38.2% only
+     - Standard: 38.2% + 50%
+     - Aggressive: 23.6% + 38.2% + 50%
+   Optimize per asset.
+
+4. REGIME-AWARE OPTIMIZATION
+   Problem: Strategy optimized on mixed market conditions.
+   Solution: Segment data by HMM regime (Bull/Bear/Chop):
+     - Optimize separately for each regime
+     - Store regime-specific parameters
+     - Sentinel selects params based on current regime
+
+5. ADAPTIVE POSITION SIZING
+   Problem: Fixed 2% risk per trade.
+   Solution: Kelly Criterion optimization:
+     - Calculate optimal f based on backtest results
+     - Include in optimization output
+     - Vary position size by confidence level
+
+------------------------------------------------------------------------------
+ENGINE IMPROVEMENTS
+------------------------------------------------------------------------------
+
+6. PARALLEL PROCESSING
+   Problem: Sequential asset processing is slow.
+   Solution: Use concurrent.futures for parallel optimization:
+     ```python
+     with ThreadPoolExecutor(max_workers=4) as executor:
+         futures = {executor.submit(optimize_asset, a): a for a in assets}
+     ```
+   Could reduce runtime by 4x.
+
+7. INCREMENTAL OPTIMIZATION
+   Problem: Re-optimizes everything every time.
+   Solution: Add delta optimization:
+     - Track last optimization date per asset
+     - Only re-optimize if:
+       * >7 days since last optimization
+       * Performance degraded (win rate dropped 10%+)
+       * New data available
+
+8. MONTE CARLO VALIDATION
+   Problem: Single backtest may be lucky.
+   Solution: Run Monte Carlo simulation:
+     - Shuffle trade order 1000 times
+     - Calculate confidence intervals
+     - Only accept if 95% CI still passes criteria
+
+9. TRANSACTION COST MODELING
+   Problem: Backtest ignores real trading costs.
+   Solution: Add cost model:
+     - Spread: 0.05% per trade
+     - Commission: 0.1% per trade
+     - Slippage: 0.02% market orders
+   Deduct from each trade in backtest.
+
+10. DATA QUALITY CHECKS
+    Problem: Bad data causes false signals.
+    Solution: Add validation layer:
+      - Check for gaps in data
+      - Detect outlier candles (>5 std moves)
+      - Verify volume consistency
+      - Flag low-liquidity periods
+
+------------------------------------------------------------------------------
+UI/UX IMPROVEMENTS
+------------------------------------------------------------------------------
+
+11. REAL-TIME PROGRESS STREAMING
+    Problem: Progress updates are basic.
+    Solution: WebSocket-based live updates:
+      - Show current asset being tested
+      - Display preliminary results as they come
+      - Chart updating in real-time
+      - ETA calculation
+
+12. COMPARISON VIEW
+    Problem: Hard to compare strategies side-by-side.
+    Solution: Add comparison dashboard:
+      - Select 2-4 configurations
+      - Overlay equity curves
+      - Side-by-side metrics table
+      - Statistical significance test
+
+13. EXPORT FUNCTIONALITY
+    Problem: Can't export results.
+    Solution: Add export buttons:
+      - CSV download of leaderboard
+      - PDF report with charts
+      - JSON for programmatic use
+      - Telegram/Discord notification
+
+14. CUSTOM CRITERIA BUILDER
+    Problem: Fixed selection criteria.
+    Solution: UI for custom criteria:
+      - Sliders for min/max trades per day
+      - Adjustable profit factor threshold
+      - Custom scoring formula
+      - Save/load criteria presets
+
+15. HISTORICAL PERFORMANCE TRACKING
+    Problem: No history of optimization runs.
+    Solution: Add optimization_history table:
+      - Store all optimization runs with timestamps
+      - Track how optimal configs change over time
+      - Alert if best timeframe changes frequently
+      - Identify stable vs unstable assets
+
+------------------------------------------------------------------------------
+RISK MANAGEMENT IMPROVEMENTS
+------------------------------------------------------------------------------
+
+16. DRAWDOWN-ADJUSTED OPTIMIZATION
+    Problem: May select high-return but high-drawdown configs.
+    Solution: Add Calmar ratio to scoring:
+      - Calmar = Annual Return / Max Drawdown
+      - Prefer strategies with smoother equity curves
+      - Reject configs with >25% drawdown
+
+17. CORRELATION ANALYSIS
+    Problem: May select correlated assets/timeframes.
+    Solution: Add portfolio-level optimization:
+      - Calculate correlation matrix of returns
+      - Penalize highly correlated selections
+      - Ensure portfolio diversification
+
+18. STRESS TESTING
+    Problem: Only tested on recent 30 days.
+    Solution: Add stress test scenarios:
+      - Test on 2020 COVID crash
+      - Test on 2022 crypto winter
+      - Test on flash crash events
+      - Require passing stress tests
+
+19. MAXIMUM CONSECUTIVE LOSSES
+    Problem: Win rate doesn't capture losing streaks.
+    Solution: Add max consecutive loss metric:
+      - Track worst losing streak
+      - Reject if >8 consecutive losses
+      - Important for psychological sustainability
+
+20. RISK-OF-RUIN CALCULATION
+    Problem: No bankruptcy risk assessment.
+    Solution: Calculate risk of ruin:
+      - Based on win rate, avg win/loss, position size
+      - Reject configs with >5% risk of ruin
+      - Display in dashboard
+
+------------------------------------------------------------------------------
+INFRASTRUCTURE IMPROVEMENTS
+------------------------------------------------------------------------------
+
+21. CACHING LAYER
+    Problem: Re-fetches data every optimization.
+    Solution: Add data cache:
+      - Cache OHLCV data in SQLite or Redis
+      - TTL of 1 hour for intraday data
+      - Reduces API calls by 80%+
+
+22. SCHEDULED OPTIMIZATION
+    Problem: Manual trigger only.
+    Solution: Add scheduler:
+      - Run Gauntlet every Sunday at 00:00 UTC
+      - Email/Slack notification with results
+      - Auto-update Sentinel configs
+
+23. CLOUD DEPLOYMENT OPTION
+    Problem: Runs locally only.
+    Solution: Add cloud runner:
+      - Docker container for Gauntlet
+      - AWS Lambda or GCP Cloud Run
+      - Trigger via API endpoint
+
+================================================================================
+                              END OF DOCUMENT
+================================================================================
+
+Document: THE_GAUNTLET_DOCUMENTATION.txt
+Created: January 2026
+Total Lines: 900+
+
+For questions or issues, refer to:
+  - CLAUDE.md - Project coding standards
+  - docs/QUICK_REFERENCE.md - Command cheatsheet
+  - test_gauntlet.py - Validation test suite
+
+================================================================================
