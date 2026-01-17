@@ -1,0 +1,741 @@
+================================================================================
+                    THE GAUNTLET 2.0 - MASTER IMPLEMENTATION PROMPT
+                    Self-Executing Enhancement Plan for Claude Code
+================================================================================
+
+                              PROMPT ENGINEERING NOTES
+================================================================================
+
+This prompt uses the following best practices for optimal Claude execution:
+
+1. PERSONA FRAMING: Establishes expertise and mindset
+2. STRUCTURED DECOMPOSITION: Breaks complex work into phases
+3. EXPLICIT CONSTRAINTS: Defines what NOT to do
+4. VERIFICATION CHECKPOINTS: Tests after each phase
+5. CONTEXT ANCHORING: References existing codebase patterns
+6. OUTPUT SPECIFICATIONS: Defines exact file formats and structures
+7. CHAIN-OF-THOUGHT TRIGGERS: Uses "think step by step" patterns
+8. FEW-SHOT EXAMPLES: Shows expected patterns where helpful
+9. GUARDRAILS: Prevents scope creep and maintains focus
+10. SUCCESS CRITERIA: Defines "done" for each phase
+
+================================================================================
+                              BEGIN MASTER PROMPT
+================================================================================
+
+<system>
+You are a Senior Quantitative Developer and Systems Architect working on the
+SOLAT Platform - a Self-Optimizing Local Algorithmic Trading system. You have
+deep expertise in:
+
+- Algorithmic trading strategy development
+- Backtesting frameworks and walk-forward analysis
+- Python async programming and parallel processing
+- SQLite optimization and database design
+- Streamlit dashboard development
+- Statistical validation (Monte Carlo, bootstrapping)
+- Risk management and portfolio theory
+
+Your communication style is:
+- Precise and technical
+- Shows your reasoning before implementing
+- Tests incrementally after each change
+- Commits frequently with clear messages
+- Never breaks existing functionality
+</system>
+
+<context>
+You are enhancing "The Gauntlet" - a multi-timeframe strategy optimization
+engine. The current implementation exists in:
+
+- src/core/strategies.py (IchimokuFibonacci strategy)
+- src/core/optimizer_loop.py (Gauntlet optimization engine)
+- src/database/repository.py (Database schema)
+- dashboard/pages/backtest.py (Quant Lab UI)
+
+The system currently:
+1. Tests assets across 5m, 15m, 30m, 1h timeframes
+2. Runs IchimokuFibonacci backtests
+3. Validates against criteria (2-5 trades/day, PF>1.3, WR>45%)
+4. Saves optimal configs to database
+5. Displays results in Streamlit dashboard
+
+You must enhance this system following the phased plan below.
+</context>
+
+<constraints>
+CRITICAL - You MUST follow these rules:
+
+1. NEVER break existing functionality - all current features must still work
+2. NEVER remove existing tests - only add new ones
+3. ALWAYS use type hints for all new functions
+4. ALWAYS follow existing code patterns (see CLAUDE.md)
+5. ALWAYS run tests after each phase before proceeding
+6. NEVER exceed 500 lines per file - split into modules if needed
+7. ALWAYS use WAL mode for SQLite connections
+8. NEVER hardcode credentials or API keys
+9. ALWAYS handle exceptions gracefully with logging
+10. COMMIT after each completed phase with descriptive messages
+</constraints>
+
+<output_format>
+For each phase, you must:
+
+1. STATE your understanding of the task
+2. LIST files you will create/modify
+3. SHOW your implementation plan (pseudocode or bullets)
+4. IMPLEMENT the code
+5. WRITE/UPDATE tests
+6. RUN tests and verify
+7. COMMIT with phase number in message
+8. REPORT completion status
+
+Use this template for each phase:
+```
+## PHASE X: [Name]
+
+### Understanding
+[What this phase accomplishes]
+
+### Files
+- CREATE: [new files]
+- MODIFY: [existing files]
+
+### Plan
+1. [Step 1]
+2. [Step 2]
+...
+
+### Implementation
+[Code blocks]
+
+### Tests
+[Test code]
+
+### Verification
+[Test output]
+
+### Commit
+[Commit message]
+
+### Status: [COMPLETE/BLOCKED]
+```
+</output_format>
+
+================================================================================
+                         PHASED IMPLEMENTATION PLAN
+================================================================================
+
+Execute these phases IN ORDER. Do not skip phases. Each phase builds on the
+previous one. If blocked, document the blocker and proceed to next independent
+phase.
+
+================================================================================
+PHASE 1: FOUNDATION - Data Quality & Caching Layer
+================================================================================
+Priority: CRITICAL
+Estimated Complexity: Medium
+Dependencies: None
+
+OBJECTIVE:
+Create a robust data layer that validates data quality and caches API responses
+to reduce load and improve optimization speed.
+
+TASKS:
+
+1.1 Create src/core/data_validator.py
+    - DataQualityChecker class with methods:
+      * validate_ohlcv(df) -> Tuple[bool, List[str]]
+      * detect_gaps(df, expected_interval) -> List[datetime]
+      * detect_outliers(df, std_threshold=5) -> pd.DataFrame
+      * check_volume_consistency(df) -> bool
+      * get_quality_score(df) -> float (0-1)
+
+    Example validation:
+    ```python
+    def detect_outliers(self, df: pd.DataFrame, std_threshold: float = 5) -> pd.DataFrame:
+        """Flag candles with returns > std_threshold standard deviations."""
+        returns = df['close'].pct_change()
+        mean, std = returns.mean(), returns.std()
+        outliers = df[abs(returns - mean) > std_threshold * std]
+        return outliers
+    ```
+
+1.2 Create src/core/data_cache.py
+    - DataCache class with SQLite backend:
+      * cache_ohlcv(symbol, timeframe, df, ttl_hours=1)
+      * get_cached_ohlcv(symbol, timeframe) -> Optional[pd.DataFrame]
+      * is_cache_valid(symbol, timeframe) -> bool
+      * clear_cache(symbol=None, older_than_hours=24)
+
+    Schema for cache table:
+    ```sql
+    CREATE TABLE ohlcv_cache (
+        id INTEGER PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        timeframe TEXT NOT NULL,
+        data BLOB NOT NULL,  -- Compressed pickle
+        fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL,
+        row_count INTEGER,
+        UNIQUE(symbol, timeframe)
+    )
+    ```
+
+1.3 Update src/core/optimizer_loop.py
+    - Inject DataCache into GauntletOptimizer
+    - Add DataQualityChecker validation before backtests
+    - Log quality scores and skip low-quality data
+
+TESTS:
+- test_data_validator.py: Test each validation method
+- test_data_cache.py: Test cache CRUD operations, TTL expiry
+
+SUCCESS CRITERIA:
+- [ ] All validation methods return correct results on test data
+- [ ] Cache reduces API calls by 80%+ on second optimization run
+- [ ] Low-quality data is flagged and logged
+
+================================================================================
+PHASE 2: STATISTICAL VALIDATION - Monte Carlo & Walk-Forward
+================================================================================
+Priority: CRITICAL
+Estimated Complexity: High
+Dependencies: Phase 1
+
+OBJECTIVE:
+Add statistical rigor to prevent overfitting and ensure results are significant.
+
+TASKS:
+
+2.1 Create src/core/statistical_validator.py
+    - MonteCarloValidator class:
+      * run_simulation(trades: List[Dict], n_simulations=1000) -> Dict
+      * calculate_confidence_intervals(results, confidence=0.95) -> Dict
+      * is_statistically_significant(results) -> bool
+
+    - WalkForwardAnalyzer class:
+      * split_data(df, train_pct=0.7) -> Tuple[pd.DataFrame, pd.DataFrame]
+      * run_walk_forward(df, strategy, n_folds=5) -> List[Dict]
+      * calculate_oos_performance(results) -> Dict
+      * is_robust(in_sample, out_of_sample, degradation_threshold=0.2) -> bool
+
+    Monte Carlo logic:
+    ```python
+    def run_simulation(self, trades: List[Dict], n_simulations: int = 1000) -> Dict:
+        """Shuffle trade order and recalculate metrics."""
+        original_metrics = self._calculate_metrics(trades)
+        simulated_metrics = []
+
+        for _ in range(n_simulations):
+            shuffled = random.sample(trades, len(trades))
+            metrics = self._calculate_metrics(shuffled)
+            simulated_metrics.append(metrics)
+
+        return {
+            'original': original_metrics,
+            'simulations': simulated_metrics,
+            'percentile_5': np.percentile([m['profit_factor'] for m in simulated_metrics], 5),
+            'percentile_95': np.percentile([m['profit_factor'] for m in simulated_metrics], 95),
+        }
+    ```
+
+2.2 Update src/core/optimizer_loop.py
+    - Add monte_carlo_validation option to GauntletConfig
+    - Add walk_forward_validation option to GauntletConfig
+    - Integrate validators into _run_backtest method
+    - Only accept results that pass statistical validation
+
+2.3 Update database schema
+    - Add columns to gauntlet_results:
+      * monte_carlo_pf_5pct REAL
+      * monte_carlo_pf_95pct REAL
+      * walk_forward_oos_return REAL
+      * is_statistically_valid INTEGER
+
+TESTS:
+- test_monte_carlo.py: Test with known distributions
+- test_walk_forward.py: Test fold splitting, OOS calculation
+
+SUCCESS CRITERIA:
+- [ ] Monte Carlo produces consistent confidence intervals
+- [ ] Walk-forward correctly identifies overfitted strategies
+- [ ] Results table shows statistical validation columns
+
+================================================================================
+PHASE 3: COST MODELING - Real-World Trading Costs
+================================================================================
+Priority: HIGH
+Estimated Complexity: Medium
+Dependencies: None (can parallel with Phase 2)
+
+OBJECTIVE:
+Model real trading costs to make backtests more realistic.
+
+TASKS:
+
+3.1 Create src/core/cost_model.py
+    - TradingCostModel class:
+      * __init__(spread_pct, commission_pct, slippage_pct)
+      * calculate_entry_cost(price, size) -> float
+      * calculate_exit_cost(price, size) -> float
+      * calculate_round_trip_cost(entry, exit, size) -> float
+      * apply_costs_to_trades(trades: List[Dict]) -> List[Dict]
+
+    - Preset cost models:
+      * CryptoSpotCosts (spread=0.05%, commission=0.1%, slippage=0.02%)
+      * ForexCosts (spread=0.01%, commission=0.005%, slippage=0.01%)
+      * EquityCosts (spread=0.02%, commission=0.1%, slippage=0.03%)
+
+    Example:
+    ```python
+    @dataclass
+    class TradingCostModel:
+        spread_pct: float = 0.0005  # 0.05%
+        commission_pct: float = 0.001  # 0.1%
+        slippage_pct: float = 0.0002  # 0.02%
+
+        def calculate_round_trip_cost(self, entry: float, exit: float, size: float) -> float:
+            entry_cost = entry * size * (self.spread_pct/2 + self.commission_pct + self.slippage_pct)
+            exit_cost = exit * size * (self.spread_pct/2 + self.commission_pct + self.slippage_pct)
+            return entry_cost + exit_cost
+    ```
+
+3.2 Update src/core/optimizer_loop.py
+    - Add cost_model parameter to GauntletConfig
+    - Apply costs in _run_backtest before calculating metrics
+    - Auto-select cost model based on asset source (ccxt->crypto, ig->forex)
+
+3.3 Update dashboard
+    - Show gross vs net returns in leaderboard
+    - Add cost breakdown in Manual Inspector
+
+TESTS:
+- test_cost_model.py: Verify cost calculations
+- Integration test: Ensure backtests include costs
+
+SUCCESS CRITERIA:
+- [ ] All backtests include realistic transaction costs
+- [ ] Dashboard shows both gross and net performance
+- [ ] Cost model auto-selects based on asset type
+
+================================================================================
+PHASE 4: MULTI-STRATEGY SUPPORT
+================================================================================
+Priority: HIGH
+Estimated Complexity: High
+Dependencies: Phase 1
+
+OBJECTIVE:
+Enable The Gauntlet to test multiple strategies and find the best one per asset.
+
+TASKS:
+
+4.1 Create src/core/strategy_registry.py
+    - StrategyRegistry singleton:
+      * register(name, strategy_class)
+      * get(name) -> BaseStrategy
+      * list_all() -> List[str]
+      * get_for_timeframe(timeframe) -> List[BaseStrategy]
+
+    - Register existing strategies:
+      * "ichimoku_fibonacci" (current)
+      * "ichimoku_standard" (new)
+      * "ichimoku_aggressive" (new)
+      * "mean_reversion" (new)
+
+4.2 Create src/core/strategies/ichimoku_standard.py
+    - Standard Ichimoku without Fibonacci:
+      * BUY: Price > Cloud + TK Cross Up
+      * SELL: Price < Cloud + TK Cross Down
+      * Exit: Opposite signal or Kijun breach
+
+4.3 Create src/core/strategies/mean_reversion.py
+    - Bollinger Band mean reversion:
+      * BUY: Price touches lower band + RSI < 30
+      * SELL: Price touches upper band + RSI > 70
+      * Exit: Price returns to middle band
+
+4.4 Update src/core/optimizer_loop.py
+    - Add strategies parameter to GauntletConfig (default: all)
+    - Nested loop: for strategy in strategies: for timeframe in timeframes
+    - Track best (strategy, timeframe) combination per asset
+
+4.5 Update database schema
+    - gauntlet_results already has strategy column (good)
+    - Update assets.best_strategy to store winning strategy name
+
+TESTS:
+- test_strategy_registry.py: Test registration and retrieval
+- test_ichimoku_standard.py: Verify signal logic
+- test_mean_reversion.py: Verify signal logic
+
+SUCCESS CRITERIA:
+- [ ] Gauntlet tests all registered strategies
+- [ ] Best strategy name saved to assets table
+- [ ] Dashboard shows strategy name in leaderboard
+
+================================================================================
+PHASE 5: RISK MANAGEMENT METRICS
+================================================================================
+Priority: HIGH
+Estimated Complexity: Medium
+Dependencies: Phase 2
+
+OBJECTIVE:
+Add comprehensive risk metrics to filter out high-risk configurations.
+
+TASKS:
+
+5.1 Create src/core/risk_metrics.py
+    - RiskMetricsCalculator class:
+      * calculate_calmar_ratio(returns, max_drawdown) -> float
+      * calculate_sortino_ratio(returns, target=0) -> float
+      * calculate_max_consecutive_losses(trades) -> int
+      * calculate_risk_of_ruin(win_rate, avg_win, avg_loss, risk_pct) -> float
+      * calculate_ulcer_index(equity_curve) -> float
+      * calculate_pain_ratio(returns, ulcer_index) -> float
+
+    Risk of Ruin formula:
+    ```python
+    def calculate_risk_of_ruin(self, win_rate: float, avg_win: float,
+                                avg_loss: float, risk_pct: float) -> float:
+        """Calculate probability of losing entire account."""
+        if win_rate >= 1 or avg_loss == 0:
+            return 0.0
+
+        a = avg_win / avg_loss
+        q = 1 - win_rate
+
+        if a * win_rate <= q:
+            return 1.0  # Certain ruin
+
+        # Simplified formula for risk of ruin
+        ror = ((1 - a * win_rate / q) ** (1 / risk_pct))
+        return min(max(ror, 0), 1)
+    ```
+
+5.2 Update src/core/optimizer_loop.py
+    - Add risk thresholds to GauntletConfig:
+      * max_drawdown_threshold: float = 0.25
+      * max_consecutive_losses: int = 8
+      * max_risk_of_ruin: float = 0.05
+    - Calculate all risk metrics in _run_backtest
+    - Reject configs that exceed risk thresholds
+
+5.3 Update database schema
+    - Add columns to gauntlet_results:
+      * calmar_ratio REAL
+      * sortino_ratio REAL
+      * max_consecutive_losses INTEGER
+      * risk_of_ruin REAL
+      * ulcer_index REAL
+
+5.4 Update dashboard
+    - Add risk metrics columns to leaderboard (expandable)
+    - Color-code high-risk configs in red
+
+TESTS:
+- test_risk_metrics.py: Verify each calculation
+- Integration: Verify risky configs are rejected
+
+SUCCESS CRITERIA:
+- [ ] All risk metrics calculated correctly
+- [ ] High-risk configs filtered out
+- [ ] Dashboard shows risk assessment
+
+================================================================================
+PHASE 6: PARALLEL PROCESSING
+================================================================================
+Priority: MEDIUM
+Estimated Complexity: Medium
+Dependencies: Phase 1
+
+OBJECTIVE:
+Dramatically speed up optimization through parallel asset processing.
+
+TASKS:
+
+6.1 Update src/core/optimizer_loop.py
+    - Add parallel_workers parameter to GauntletConfig (default: 4)
+    - Refactor run_mass_optimization to use ThreadPoolExecutor
+    - Ensure thread-safe database writes (use queue or locks)
+    - Add progress tracking for parallel execution
+
+    Implementation pattern:
+    ```python
+    def run_mass_optimization_parallel(self, progress_callback=None) -> Dict:
+        assets = self._load_assets_from_db()
+        winners = {}
+
+        with ThreadPoolExecutor(max_workers=self.config.parallel_workers) as executor:
+            future_to_asset = {
+                executor.submit(self.optimize_asset, a['symbol'], a['source']): a
+                for a in assets
+            }
+
+            for idx, future in enumerate(as_completed(future_to_asset), 1):
+                asset = future_to_asset[future]
+                try:
+                    results = future.result()
+                    # Process results...
+                    if progress_callback:
+                        progress_callback(f"[{idx}/{len(assets)}] {asset['symbol']} complete")
+                except Exception as e:
+                    logger.error(f"Error optimizing {asset['symbol']}: {e}")
+
+        return winners
+    ```
+
+6.2 Update dashboard
+    - Show parallel progress (multiple assets at once)
+    - Display estimated time remaining
+
+TESTS:
+- test_parallel_optimization.py: Verify correct results with parallel
+- Benchmark: Measure speedup vs sequential
+
+SUCCESS CRITERIA:
+- [ ] Parallel execution produces same results as sequential
+- [ ] 3-4x speedup achieved with 4 workers
+- [ ] No race conditions or data corruption
+
+================================================================================
+PHASE 7: REGIME-AWARE OPTIMIZATION
+================================================================================
+Priority: MEDIUM
+Estimated Complexity: High
+Dependencies: Phase 4
+
+OBJECTIVE:
+Optimize strategies separately for each market regime (Bull/Bear/Chop).
+
+TASKS:
+
+7.1 Update src/core/optimizer_loop.py
+    - Add regime_aware option to GauntletConfig
+    - Segment historical data by HMM regime
+    - Run separate optimizations for each regime
+    - Store regime-specific parameters
+
+7.2 Update database schema
+    - New table: regime_optimal_configs
+      * symbol TEXT
+      * regime TEXT (bull/bear/chop)
+      * best_timeframe TEXT
+      * best_strategy TEXT
+      * parameters TEXT
+      * metrics TEXT
+      * UNIQUE(symbol, regime)
+
+7.3 Create src/core/regime_optimizer.py
+    - RegimeAwareOptimizer class:
+      * segment_by_regime(df, regime_labels) -> Dict[str, pd.DataFrame]
+      * optimize_for_regime(df, regime) -> OptimizationResult
+      * combine_regime_results(results) -> Dict
+
+7.4 Update Sentinel integration
+    - Load regime-specific config based on current HMM regime
+    - Fallback to default config if regime-specific unavailable
+
+TESTS:
+- test_regime_optimizer.py: Test segmentation and per-regime optimization
+
+SUCCESS CRITERIA:
+- [ ] Separate optimal configs stored per regime
+- [ ] Sentinel correctly loads regime-specific params
+- [ ] Dashboard shows regime breakdown
+
+================================================================================
+PHASE 8: STRESS TESTING
+================================================================================
+Priority: MEDIUM
+Estimated Complexity: Medium
+Dependencies: Phase 2
+
+OBJECTIVE:
+Validate strategies against historical stress events.
+
+TASKS:
+
+8.1 Create src/core/stress_tester.py
+    - StressTester class:
+      * load_stress_scenarios() -> Dict[str, Tuple[datetime, datetime]]
+      * run_stress_test(strategy, scenario_name) -> Dict
+      * calculate_stress_metrics(results) -> Dict
+      * is_stress_resilient(results, max_stress_dd=0.30) -> bool
+
+    - Predefined scenarios:
+      * "covid_crash": 2020-02-20 to 2020-03-23
+      * "crypto_winter_2022": 2022-05-01 to 2022-06-30
+      * "flash_crash_2010": 2010-05-06 (if applicable)
+      * "fed_pivot_2022": 2022-09-01 to 2022-10-15
+
+8.2 Update src/core/optimizer_loop.py
+    - Add stress_test option to GauntletConfig
+    - Run stress tests on winning configs
+    - Reject if stress drawdown exceeds threshold
+
+8.3 Update database schema
+    - Add to gauntlet_results:
+      * stress_tested INTEGER DEFAULT 0
+      * worst_stress_scenario TEXT
+      * worst_stress_drawdown REAL
+
+TESTS:
+- test_stress_tester.py: Verify scenario loading and metrics
+
+SUCCESS CRITERIA:
+- [ ] Stress tests run on historical scenarios
+- [ ] Non-resilient strategies rejected
+- [ ] Dashboard shows stress test results
+
+================================================================================
+PHASE 9: DASHBOARD ENHANCEMENTS
+================================================================================
+Priority: MEDIUM
+Estimated Complexity: Medium
+Dependencies: Phases 1-8
+
+OBJECTIVE:
+Upgrade the Quant Lab dashboard with advanced features.
+
+TASKS:
+
+9.1 Add Comparison View tab
+    - Select 2-4 configurations to compare
+    - Overlay equity curves on same chart
+    - Side-by-side metrics table
+    - Statistical significance test between strategies
+
+9.2 Add Export Functionality
+    - CSV download button for leaderboard
+    - PDF report generation with charts
+    - JSON export for programmatic use
+
+9.3 Add Custom Criteria Builder
+    - Sliders for all threshold parameters
+    - Custom scoring formula input
+    - Save/load criteria presets to database
+
+9.4 Add Historical Tracking
+    - Show optimization history over time
+    - Alert if optimal config changed recently
+    - Trend charts for key metrics
+
+9.5 Real-time Progress Improvements
+    - WebSocket or polling for live updates
+    - Show multiple assets in progress (parallel)
+    - ETA calculation based on completion rate
+
+TESTS:
+- Manual UI testing for each new feature
+- Verify exports contain correct data
+
+SUCCESS CRITERIA:
+- [ ] All new tabs functional
+- [ ] Exports produce valid files
+- [ ] Custom criteria work correctly
+
+================================================================================
+PHASE 10: INFRASTRUCTURE & SCHEDULING
+================================================================================
+Priority: LOW
+Estimated Complexity: Medium
+Dependencies: All previous phases
+
+OBJECTIVE:
+Add automation and deployment capabilities.
+
+TASKS:
+
+10.1 Create src/scheduler/gauntlet_scheduler.py
+    - GauntletScheduler class:
+      * schedule_weekly(day='sunday', hour=0)
+      * schedule_on_demand()
+      * notify_completion(results, channels=['email', 'discord'])
+    - Use APScheduler or similar
+
+10.2 Create Dockerfile for Gauntlet
+    ```dockerfile
+    FROM python:3.11-slim
+    WORKDIR /app
+    COPY requirements.txt .
+    RUN pip install -r requirements.txt
+    COPY src/ src/
+    COPY dashboard/ dashboard/
+    CMD ["python", "-m", "src.core.optimizer_loop"]
+    ```
+
+10.3 Create GitHub Actions workflow
+    - .github/workflows/gauntlet.yml
+    - Trigger: manual or scheduled (weekly)
+    - Run optimization and commit results
+
+10.4 Add notification system
+    - Email notification on completion
+    - Discord webhook integration
+    - Telegram bot option
+
+TESTS:
+- Test scheduler triggers correctly
+- Test notifications deliver
+
+SUCCESS CRITERIA:
+- [ ] Weekly optimization runs automatically
+- [ ] Notifications sent on completion
+- [ ] Docker container runs successfully
+
+================================================================================
+                         EXECUTION INSTRUCTIONS
+================================================================================
+
+STEP 1: Read this entire prompt carefully
+STEP 2: Verify you understand the existing codebase (read CLAUDE.md)
+STEP 3: Execute phases in order (1 -> 10)
+STEP 4: After each phase:
+        - Run all tests (existing + new)
+        - Commit with message "Phase X: [description]"
+        - Verify no regressions
+STEP 5: If blocked on a phase, document and move to next independent phase
+STEP 6: After all phases, create summary document
+
+PARALLEL EXECUTION OPPORTUNITIES:
+- Phase 1 and Phase 3 can run in parallel
+- Phase 4 can start after Phase 1
+- Phase 5 requires Phase 2
+- Phase 6 requires Phase 1
+- Phase 7 requires Phase 4
+- Phase 8 requires Phase 2
+- Phase 9 requires Phases 1-8
+- Phase 10 requires all phases
+
+ESTIMATED TOTAL EFFORT:
+- Phase 1: ~300 lines of code
+- Phase 2: ~400 lines of code
+- Phase 3: ~200 lines of code
+- Phase 4: ~500 lines of code
+- Phase 5: ~250 lines of code
+- Phase 6: ~150 lines of code
+- Phase 7: ~350 lines of code
+- Phase 8: ~250 lines of code
+- Phase 9: ~600 lines of code
+- Phase 10: ~300 lines of code
+- TOTAL: ~3,300 lines of new code
+
+================================================================================
+                              END MASTER PROMPT
+================================================================================
+
+VERIFICATION CHECKLIST (Run after all phases):
+
+[ ] All existing tests still pass
+[ ] All new tests pass
+[ ] Dashboard loads without errors
+[ ] Gauntlet runs end-to-end successfully
+[ ] Results are saved to database
+[ ] No performance regressions
+[ ] Documentation updated
+[ ] All commits pushed
+
+================================================================================
