@@ -8,7 +8,7 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute('PRAGMA journal_mode=WAL;')
 
-    # 1. ASSETS (Added last_scan, optimal_strategy)
+    # 1. ASSETS (Added optimization columns for The Gauntlet)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS assets (
         symbol TEXT PRIMARY KEY,
@@ -17,6 +17,9 @@ def init_db():
         fitness_score REAL,
         last_scan DATETIME,
         optimal_strategy TEXT,
+        best_timeframe TEXT,
+        best_strategy TEXT,
+        opt_params TEXT,
         last_updated DATETIME,
         meta_data TEXT
     )
@@ -117,9 +120,49 @@ def init_db():
     )
     ''')
 
+    # 8. GAUNTLET RESULTS (Multi-Timeframe Optimization Results)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS gauntlet_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        timeframe TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        trades_per_day REAL,
+        win_rate REAL,
+        profit_factor REAL,
+        sharpe_ratio REAL,
+        max_drawdown REAL,
+        total_return REAL,
+        avg_trade_duration REAL,
+        is_valid INTEGER DEFAULT 0,
+        parameters TEXT,
+        calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(symbol, timeframe, strategy)
+    )
+    ''')
+
+    # 9. STRATEGY PERFORMANCE (Backtest Results per Strategy)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS strategy_performance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        strategy_name TEXT NOT NULL,
+        win_rate REAL,
+        sharpe_ratio REAL,
+        max_drawdown REAL,
+        total_trades INTEGER,
+        profit_factor REAL,
+        avg_win REAL,
+        avg_loss REAL,
+        is_optimal INTEGER DEFAULT 0,
+        calculated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(symbol, strategy_name)
+    )
+    ''')
+
     conn.commit()
     conn.close()
-    print("Database initialized with MASTER Schema")
+    print("Database initialized with MASTER Schema (v2 - Gauntlet)")
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
